@@ -3,14 +3,18 @@ import pandas as pd
 import numpy as np
 import jax.numpy as jnp
 import jax
+from flax import linen as nn
+
 
 import pickle
 
 import os
 
-from cnn_block import CNN_Alpth
+from cnn_block import *
 from cnn_train import train_loop, createTrainState, createBatches, train_step, calculate_loss, loss_and_CRPS
-from utils import visualise_labels, visualise_features, visualise_loss_and_CRPS
+from cnn_losses import gevCRPSLoss
+from utils import visualise_labels, visualise_features, visualise_loss_and_CRPS, PIT_histogram, visualise_GEV
+
 
 class Experiment:
     """
@@ -35,6 +39,9 @@ class Experiment:
         self.features = experiment['features']
         self.label = experiment['label']
         self.batch_size = experiment['batch_size']
+        self.model_spatial = experiment['model_spatial'] if 'model_spatial' in experiment.keys() else "Conv"
+        self.model_temporal = experiment['model_temporal'] if 'model_temporal' in experiment.keys() else "Dense64"
+        self.model_distributional = experiment['model_distributional'] if 'model_distributional' in experiment.keys() else "DDNN"
         self.cluster_file = experiment['cluster_file']
         self.storm_file = experiment['storm_file']
         self.storm_only = experiment['storm_only']
@@ -54,6 +61,11 @@ class Experiment:
         self.clusters = [list(np.intersect1d(self.clusters.iloc[i,:].dropna(), self.stations)) for i in range(self.n_clusters)]
         self.n_stations = np.array(list(map(len, self.clusters))).sum()
         
+        self.clusters_len = np.array(list(map(len, self.clusters)))
+        coeffs_corr = np.concatenate(tuple(jnp.arange(1,self.clusters_len[i]+1) for i in range(len(self.clusters_len))))
+        self.clusters_len = np.repeat(self.clusters_len, self.clusters_len)
+        self.coeffs_corr = (2*coeffs_corr - self.clusters_len - 1)/(self.clusters_len**2)
+        
         self.scratch_folder = os.path.join(self.scratch_dir, "Experiment_" + self.expnumber)
         self.plot_folder = os.path.join(self.plot_dir, "Experiment_" + self.expnumber)
         
@@ -64,6 +76,11 @@ class Experiment:
             with open(self.storm_file, 'rb') as f:
                 storms = pickle.load(f)
             self.dates = storms.index.unique()
+            
+        if "output_CRPS" in experiment.keys():
+            self.output_CRPS = experiment['output_CRPS']
+        if "test_CRPS" in experiment.keys():
+            self.test_CRPS = experiment['test_CRPS']
             
     
     def create_inputs(self):
@@ -83,7 +100,14 @@ class Experiment:
                 else:
                     loc_dates = inputs.time
                 
-                npinputs_t = np.array([[[time.day_of_year, time.hour, lt] for time in loc_dates] for lt in inputs.lead_time], dtype = np.float32).reshape(-1,3) if npinputs_t is None else np.concatenate([npinputs_t, np.array([[[time.day_of_year, time.hour, lt] for time in loc_dates] for lt in inputs.lead_time], dtype = np.float32).reshape(-1,3)], axis = 0)
+                # Sinusoidal encoding of time
+                tmp_t = np.array([[[(time.day_of_year - 242)/107, # Encoding of day of year between -1 and +1
+                                    np.cos(time.hour*np.pi/12),
+                                    np.sin(time.hour*np.pi/12),
+                                    lt/72] for time in loc_dates] for lt in inputs.lead_time],
+                                 dtype = np.float32).reshape(-1,4)
+                
+                npinputs_t = tmp_t if npinputs_t is None else np.concatenate([npinputs_t, tmp_t], axis = 0)
                 # Inputs
                 tmp_var = None
                 for ivar in range(len(self.features)):
@@ -137,6 +161,7 @@ class Experiment:
                 pickle.dump((jnpinputs_s, jnpinputs_t), f)
             with open(os.path.join(self.scratch_dir, "Experiment_" + self.expnumber, f'{type_set}_labels.pkl'), 'wb') as f:
                 pickle.dump(jnplabels, f)
+        print("Done.", flush = True)
     
             
     def load_mean_std(self):
@@ -202,7 +227,7 @@ class Experiment:
             f.write(str(self))
     
     
-    def run(self):
+    def run(self, preComputed = False):
         """
         Run the experiment.
         """
@@ -215,60 +240,213 @@ class Experiment:
         if not data_exists:
             self.load_mean_std()
             self.create_inputs()
+        print("Loading data...", flush = True)
         self.load_data()
+        
+        self.train_corr = jnp.sort(jnp.concatenate(self.train_l, axis = 1))@self.coeffs_corr / self.n_clusters
+        self.val_corr = jnp.sort(jnp.concatenate(self.val_l, axis = 1))@self.coeffs_corr / self.n_clusters
+        self.test_corr = jnp.sort(jnp.concatenate(self.test_l, axis = 1))@self.coeffs_corr / self.n_clusters
         
         plot_exists = os.path.exists(os.path.join(self.plot_folder, 'LabelsDistribution.png')) and\
                       os.path.exists(os.path.join(self.plot_folder, 'FeaturesDistribution.png'))
         if not plot_exists:
+            print("Visualising data...", flush = True)
             visualise_labels(self.train_l, self.val_l, self.test_l, os.path.join(self.plot_folder, 'LabelsDistribution.png'), self.label)
             visualise_features(self.train_s, self.val_s, self.test_s, os.path.join(self.plot_folder, 'FeaturesDistribution.png'), self.features)
         
-
-        model_state = createTrainState(CNN_Alpth(n_clusters = self.n_clusters),
-                                       self.rnginit,
-                                       self.learning_rate,
+        Spatial_NN = Conv_NN(features = 16, kernel_size = (2,2), strides = (1,1)) if self.model_spatial == "Conv" \
+            else ConvDropout(features = 16, kernel_size = (2,2), strides = (1,1)) if self.model_spatial == "ConvDrop" \
+            else ConvNeXt_NN(width = 20, height = 34) if self.model_spatial == "ConvNeXt" \
+            else nn.Sequential((Conv(features = 96, kernel_size = (1,1), strides = (1,1)),
+                                ConvNeXt_Block(features = 96))) if self.model_spatial == "ConvNeXt_Block" \
+            else nn.Sequential((Conv(features = 96, kernel_size = (1,1), strides = (1,1)),
+                                ConvNeXt_Block(features = 96),
+                                ConvNeXt_Block(features = 96),
+                                ConvNeXt_Block(features = 96))) if self.model_spatial == "3_ConvNeXt_Block" \
+            else Identity()
+        
+        Temporal_NN = Dense(features = 32) if self.model_temporal == "Dense32" \
+            else Dense(features = 64) if self.model_temporal == "Dense64" \
+            else Killed() if self.model_temporal == "Killed" \
+            else Identity()
+        
+        DDNN = DDNN_GEV(n_clusters = self.n_clusters) if self.model_distributional == "DDNN" \
+            else SimpleBaseline(n_clusters = self.n_clusters)
+        
+        model = AlpTh_NN(
+            n_clusters = self.n_clusters,
+            Spatial_NN = Spatial_NN,
+            Temporal_NN = Temporal_NN,
+            DDNN = DDNN
+        )
+                    
+        model_state = createTrainState(model,
+                                    self.rnginit,
+                                    self.learning_rate,
                                         self.batch_size,
                                         len(self.features))
+            
         
-        best_states_with_scores, train_loss, val_loss, train_CRPS, val_CRPS = train_loop(model_state,
-                                             self.train_s, self.train_t, self.train_l,
-                                             self.val_s, self.val_t, self.val_l,
-                                             self.batch_size, self.epochs, self.n_stations,
-                                             self.rngshuffle, self.regularisation, self.alpha,
-                                             self.n_best_states
-                                             )
+        if not preComputed:
+            print("Beginning training...", flush = True)
+            
+            best_states_with_scores, train_loss, val_loss, train_CRPS, val_CRPS = train_loop(model_state,
+                                                self.train_s, self.train_t, self.train_l, self.train_corr,
+                                                self.val_s, self.val_t, self.val_l, self.val_corr,
+                                                self.batch_size, self.epochs, self.n_stations, self.n_clusters,
+                                                self.rngshuffle, self.regularisation, self.alpha,
+                                                self.n_best_states
+                                                )
+            
+            # Create a custom state by taking the means of the params from best_states
         
-        # Create a custom state by taking the means of the params from best_states
-    
-        avg_params = jax.tree.map(lambda *x: jnp.stack(x).mean(axis = 0), *map(lambda x: x[0].params, best_states_with_scores))
-        
-        output_state = model_state.replace(params = avg_params)
+            avg_params = jax.tree.map(lambda *x: jnp.stack(x).mean(axis = 0), *map(lambda x: x[0].params, best_states_with_scores))
+            
+            output_state = model_state.replace(params = avg_params)
+        else:
+            with open(os.path.join(self.plot_folder, 'best_states.pkl'), 'rb') as f:
+                output_params, best_states_with_scores = pickle.load(f)
+            output_state = model_state.replace(params = output_params)
         
         final_loss = 0
         final_CRPS = 0
         count = 0
-        for x_s, x_t, y_true in createBatches(self.val_s, self.val_t, self.val_l,
+        for x_s, x_t, y_true, corr in createBatches(self.val_s, self.val_t, self.val_l, self.val_corr,
                                               self.batch_size, self.rngshuffle):
             tmp_crps, tmp_loss = loss_and_CRPS(output_state, output_state.params, (x_s, x_t, y_true),
-                                               self.batch_size, self.n_stations, self.regularisation, self.alpha)
+                                               self.batch_size, self.n_stations, self.n_clusters,
+                                               self.regularisation, self.alpha)
+            tmp_crps -= corr.mean()
             final_CRPS += tmp_crps
             final_loss += tmp_loss
             count += 1
         output_loss = final_loss/count
         output_CRPS = final_CRPS/count
         
-        visualise_loss_and_CRPS(train_loss, val_loss, output_loss,
-                                train_CRPS, val_CRPS, output_CRPS,
-                                self.n_best_states, os.path.join(self.plot_folder, 'Loss.png'))
+        if not preComputed:
+            visualise_loss_and_CRPS(train_loss, val_loss, output_loss,
+                                    train_CRPS, val_CRPS, output_CRPS,
+                                    self.n_best_states, os.path.join(self.plot_folder, 'Loss.png'))
         
-        with open(os.path.join(self.plot_folder, 'best_states.pkl'), 'wb') as f:
-            pickle.dump((output_state.params, list(map(lambda x:x[0].params, best_states_with_scores))), f)
+        if not preComputed:
+            with open(os.path.join(self.plot_folder, 'best_states.pkl'), 'wb') as f:
+                pickle.dump((output_state.params, list(map(lambda x:x[0].params, best_states_with_scores))), f)
         
         self.output_CRPS = output_CRPS
         
+        self.test_CRPS = self.PIT(leadtime=[0,1,2,3,4,5,6,12,24,36,48,72])
+        
         self.saveInformation()
+        self.saveExperimentFile()
+        self.saveSummary()
+        self.plotGEV()
 
     
+    def PIT(self, model_state = None, leadtime = None, ensemble = 'test'):
+        assert os.path.exists(os.path.join(self.plot_folder, 'best_states.pkl')), "Run the experiment first."
+        if not hasattr(self, 'test_s'):
+            self.load_data()
+        
+        with open(os.path.join(self.plot_folder, 'best_states.pkl'), 'rb') as f:
+            output_params, best_states = pickle.load(f)
+        
+        set_s = self.test_s if ensemble == 'test' else self.val_s
+        set_t = self.test_t if ensemble == 'test' else self.val_t
+        set_l = self.test_l if ensemble == 'test' else self.val_l
+        set_corr = self.test_corr if ensemble == 'test' else self.val_corr
+        
+        ntimes = len(set_s)//33 #33 different lead_times
+        
+        Spatial_NN = Conv_NN(features = 16, kernel_size = (2,2), strides = (1,1)) if self.model_spatial == "Conv" \
+            else ConvDropout(features = 16, kernel_size = (2,2), strides = (1,1)) if self.model_spatial == "ConvDrop" \
+            else ConvNeXt_NN(width = 20, height = 34) if self.model_spatial == "ConvNeXt" \
+            else nn.Sequential((Conv(features = 96, kernel_size = (1,1), strides = (1,1)),
+                                ConvNeXt_Block(features = 96))) if self.model_spatial == "ConvNeXt_Block" \
+            else nn.Sequential((Conv(features = 96, kernel_size = (1,1), strides = (1,1)),
+                                ConvNeXt_Block(features = 96),
+                                ConvNeXt_Block(features = 96),
+                                ConvNeXt_Block(features = 96))) if self.model_spatial == "3_ConvNeXt_Block" \
+            else Identity()
+        
+        Temporal_NN = Dense(features = 32) if self.model_temporal == "Dense32" \
+            else Dense(features = 64) if self.model_temporal == "Dense64" \
+            else Identity()
+        
+        DDNN = DDNN_GEV(n_clusters = self.n_clusters) if self.model_distributional == "DDNN" \
+            else SimpleBaseline(n_clusters = self.n_clusters)
+        
+        model_final = AlpTh_NN(
+            n_clusters = self.n_clusters,
+            Spatial_NN = Spatial_NN,
+            Temporal_NN = Temporal_NN,
+            DDNN = DDNN
+        )
+                    
+        state_final = createTrainState(model_final,
+                                    self.rnginit,
+                                    self.learning_rate,
+                                    ntimes,
+                                    len(self.features))
+        
+        state_final = state_final.replace(params = output_params)
+        
+        param_pred = jnp.concatenate([model_final.apply(state_final.params, set_s[ntimes*i:ntimes*(i+1)], set_t[ntimes*i:ntimes*(i+1)]) for i in range(len(set_s)//ntimes)], axis = 0)
+        # Error if I try a convolution on the whole batch, I don't know why... but this works soooo
+        PIT_histogram(set_l,
+                      param_pred,
+                      os.path.join(self.plot_folder, "PIT_histogram.png"),
+                      title = "PIT histogram", leadtime = leadtime)
+        
+        return gevCRPSLoss(param_pred, set_l, self.n_stations, len(set_s), self.n_clusters) - set_corr.mean()
+    
+    
+    def plotGEV(self):
+        assert os.path.exists(os.path.join(self.plot_folder, 'best_states.pkl')), "Run the experiment first."
+        if not hasattr(self, 'test_s'):
+            self.load_data()
+        
+        with open(os.path.join(self.plot_folder, 'best_states.pkl'), 'rb') as f:
+            output_params, best_states = pickle.load(f)
+        
+        Spatial_NN = Conv_NN(features = 16, kernel_size = (2,2), strides = (1,1)) if self.model_spatial == "Conv" \
+            else ConvDropout(features = 16, kernel_size = (2,2), strides = (1,1)) if self.model_spatial == "ConvDrop" \
+            else ConvNeXt_NN(width = 20, height = 34) if self.model_spatial == "ConvNeXt" \
+            else nn.Sequential((Conv(features = 96, kernel_size = (1,1), strides = (1,1)),
+                                ConvNeXt_Block(features = 96))) if self.model_spatial == "ConvNeXt_Block" \
+            else nn.Sequential((Conv(features = 96, kernel_size = (1,1), strides = (1,1)),
+                                ConvNeXt_Block(features = 96),
+                                ConvNeXt_Block(features = 96),
+                                ConvNeXt_Block(features = 96))) if self.model_spatial == "3_ConvNeXt_Block" \
+            else Identity()
+        
+        Temporal_NN = Dense(features = 32) if self.model_temporal == "Dense32" \
+            else Dense(features = 64) if self.model_temporal == "Dense64" \
+            else Identity()
+        
+        DDNN = DDNN_GEV(n_clusters = self.n_clusters) if self.model_distributional == "DDNN" \
+            else SimpleBaseline(n_clusters = self.n_clusters)
+        
+        model_final = AlpTh_NN(
+            n_clusters = self.n_clusters,
+            Spatial_NN = Spatial_NN,
+            Temporal_NN = Temporal_NN,
+            DDNN = DDNN
+        )
+                    
+        state_final = createTrainState(model_final,
+                                    self.rnginit,
+                                    self.learning_rate,
+                                    1,
+                                    len(self.features))
+        
+        state_final = state_final.replace(params = output_params)
+        
+        
+        param_pred = model_final.apply(state_final.params, jnp.expand_dims(self.test_s[0],0), jnp.expand_dims(self.test_t[0],0))
+        mu,sigma,xi = param_pred[0,0], param_pred[0,5], param_pred[0,10]
+        ys = self.test_l[0][0]
+        visualise_GEV(mu, sigma, xi, ys, os.path.join(self.plot_folder, "GEV.png"))
+        
     
     def saveExperimentFile(self):
         experiment_dict = {
@@ -283,6 +461,9 @@ class Experiment:
             'features': self.features,
             'label': self.label,
             'batch_size': self.batch_size,
+            'model_spatial': self.model_spatial,
+            'model_temporal': self.model_temporal,
+            'model_distributional': self.model_distributional,
             'cluster_file': self.cluster_file,
             'storm_file': self.storm_file,
             'storm_only': self.storm_only,
@@ -294,6 +475,11 @@ class Experiment:
             'alpha': self.alpha,
             'n_best_states': self.n_best_states,
         }
+        
+        if hasattr(self, 'output_CRPS'):
+            experiment_dict['output_CRPS'] = self.output_CRPS
+        if hasattr(self, 'test_CRPS'):
+            experiment_dict['test_CRPS'] = self.test_CRPS
         
         with open(self.experiment_file, 'wb') as f:
             pickle.dump(experiment_dict, f)
@@ -344,15 +530,38 @@ class Experiment:
         result += f"\nRegularization: {self.regularisation}"
         if self.regularisation is not None:
             result += f", alpha = {self.alpha}"
+            
+        result += f"\nSpatial model: {self.model_spatial}"
+        result += f"\nTemporal model: {self.model_temporal}"
+        result += f"\nDistributional model: {self.model_distributional}"
         
         result += f"\nNumber of states kept to create output state: {self.n_best_states}"
         
         if hasattr(self, 'output_CRPS'):
             result += f"\n\n --- CRPS of saved model on validation set: {self.output_CRPS} ---"
+        if hasattr(self, 'test_CRPS'):
+            result += f"\n\n --- CRPS of saved model on test set: {self.test_CRPS} ---"
         
         return result
             
-        
+    
+    def saveSummary(self):
+        assert hasattr(self, 'output_CRPS'), "Run the experiment first."
+        if os.path.exists(os.path.join(self.plot_dir, 'Summary.csv')):
+            summary = pd.read_csv(os.path.join(self.plot_dir, 'Summary.csv'), index_col = 0)
+            # Add line with experience number, output CRPS, and test CRPS
+            if int(self.expnumber) in summary.index:
+                summary.loc[int(self.expnumber)] = [self.output_CRPS, self.test_CRPS]
+            else:
+                summary = pd.concat((summary, pd.DataFrame({'Output CRPS': self.output_CRPS, 'Test CRPS': self.test_CRPS}, index = [int(self.expnumber)])))
+            # Sort by experience number
+            summary.sort_index(inplace = True)
+            # Save to file
+            summary.to_csv(os.path.join(self.plot_dir, 'Summary.csv'), index_label = "Experiment")
+        else:
+            summary = pd.DataFrame({'Output CRPS': [self.output_CRPS], 'Test CRPS': [self.test_CRPS]}, index = [int(self.expnumber)])
+            summary.to_csv(os.path.join(self.plot_dir, 'Summary.csv'), index_label = "Experiment")
+    
     
     @staticmethod
     def createExperimentFile(train_files, val_files, test_files,
@@ -360,6 +569,7 @@ class Experiment:
                              scratch_dir, plot_dir,
                              features, label,
                              batch_size,
+                             model_spatial, model_temporal, model_distributional,
                              cluster_file, storm_file, storm_only,
                              rnginit, rngshuffle, epochs, learning_rate,
                              regularisation, alpha,
@@ -391,6 +601,9 @@ class Experiment:
             'features': features,
             'label': label,
             'batch_size': batch_size,
+            'model_spatial': model_spatial,
+            'model_temporal': model_temporal,
+            'model_distributional': model_distributional,
             'cluster_file': cluster_file,
             'storm_file': storm_file,
             'storm_only': storm_only,

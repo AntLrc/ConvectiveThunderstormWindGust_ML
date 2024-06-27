@@ -139,7 +139,27 @@ def completeCases(data):
                         subset = np.setdiff1d(np.array(data.data_vars), np.array(["CAPE", "CIN", "LCL", "LFC"])))
     return data
     
+def adaptInput(inputDir, outputDir, years = None):
+    """
+    Uses the input created for the Neural Network to prepare the input for R.
+    In practice, interpolates the data on the coordinates of the stations.
+    """
     
+    for file in os.listdir(inputDir):
+        if file[-8:] != "Pangu.nc" or (years is not None and file[:4] not in years):
+            continue
+        data = xr.open_dataset(os.path.join(inputDir, file))
+        
+        # Selecting the coordinates of the stations. Using only one time step as the coordinates are the same for all time steps.
+        labels = xr.open_dataset(os.path.join(inputDir, file[:-8] + "labels.nc")).isel(time = 0).drop("time")
 
+        lons, lats = labels.longitude, labels.latitude
+        
+        # Create new file with data intersected on the coordinates of labels
+        # Fill the missing values with 0, for CAPE and CIN
+        data.fillna(0.).interp(lon = lons, lat = lats).to_netcdf(os.path.join(outputDir, file[:-8] + "_Interpolated.nc"))
+        
+        data.close()
+        labels.close()
 
 

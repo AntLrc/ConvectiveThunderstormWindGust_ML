@@ -3,6 +3,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import jax.numpy as jnp
+import jax
+from cnn_losses import GEV, gevCRPSLoss, GEVpdf
+
+
+
 
 def visualise_labels(train_labels, val_labels, test_labels, save_path, label_name):
     """
@@ -113,6 +118,124 @@ def visualise_loss_and_CRPS(train_loss, val_loss, output_loss,
     axs[1].set_xlabel('Epochs')
     axs[1].set_ylabel('CRPS')
     axs[1].legend()
+    plt.savefig(save_path)
+    plt.close()
+
+def PIT_histogram(y_true, param_pred, save_path, title = None, leadtime = None):
+    """
+    Visualise the PIT histogram. For y_true and params_pred, follows the implementation
+    of the neural networks:
+    y_true:(jnp.array of shape (n_samples, n_observations) for cluster 1,
+                jnp.array of shape (n_samples, n_observations) for cluster 2,
+                ...)
+    params_pred: jnp.array of shape (n_samples, n_params*n_clusters)
+                    formatted as mu mu mu... sigma sigma sigma... xi xi xi...
+    """
+    # Beware: this function correctly selects the lead time ONLY IF the set on which it is used correspond to only one year
+    mu, sigma, xi = jnp.split(param_pred, 3, axis = 1)
+    
+    clusters_len = jnp.asarray(jax.tree_map(lambda x: x.shape[1], y_true))
+    
+    n_clusters = len(clusters_len)
+        
+    mu = jnp.repeat(mu, clusters_len, axis = 1)
+    sigma = jnp.repeat(sigma, clusters_len, axis = 1)
+    xi = jnp.repeat(xi, clusters_len, axis = 1)
+    
+    y_true_concat = jnp.concatenate(y_true, axis = 1)
+    total_len = y_true_concat.shape[1]
+    
+    sns.set_theme()
+    PIT = GEV(mu, sigma, xi, y_true_concat)
+    
+    if leadtime is None:
+        data = PIT.flatten()
+        sns.histplot(data, stat = 'density', bins = 50)
+        plt.plot([0,1], [1,1], color = "black")
+        plt.vlines(x=[0.,1.], ymin=0, ymax=1, color = 'black')
+        if title:
+            plt.title(title)
+    else:
+        correspondance_lt = {
+            0:0,
+            1:1,
+            2:2,
+            3:3,
+            4:4,
+            5:5,
+            6:6,
+            7:7,
+            8:8,
+            9:9,
+            10:10,
+            11:11,
+            12:12,
+            13:13,
+            14:14,
+            15:15,
+            16:16,
+            17:17,
+            18:18,
+            19:19,
+            20:20,
+            21:21,
+            22:22,
+            23:23,
+            24:24,
+            27:25,
+            30:26,
+            33:27,
+            36:28,
+            42:29,
+            48:30,
+            60:31,
+            72:32
+        }
+        if not isinstance(leadtime, list):
+            leadtime = [leadtime]
+        ncols = (len(leadtime) + 1)//2
+        fig, axs = plt.subplots(2, ncols, figsize = (5*ncols, 10), sharex=True, sharey=True)
+        plt.tight_layout()
+        ntimes = len(PIT)//33
+        i = 0
+        for lt in leadtime:
+            data = PIT[correspondance_lt[lt]*ntimes:(correspondance_lt[lt]+1)*ntimes].flatten()
+            dataCRPS = gevCRPSLoss(param_pred[correspondance_lt[lt]*ntimes:(correspondance_lt[lt]+1)*ntimes],
+                                   tuple(map(lambda x: x[correspondance_lt[lt]*ntimes:(correspondance_lt[lt]+1)*ntimes], y_true)),
+                                   total_len=total_len, batch_size = ntimes, n_clusters = n_clusters)
+            sns.histplot(data, stat = 'density', bins = 50, ax = axs[i//ncols, i%ncols], label = f'CRPS: {dataCRPS:.3f}')
+            axs[i//ncols, i%ncols].plot([0,1], [1,1], color = "black")
+            axs[i//ncols, i%ncols].vlines(x=[0.,1.], ymin=0, ymax=1, color = 'black')
+            axs[i//ncols, i%ncols].set_title(f'Rank histogram for lead time {lt} hours')
+            axs[i//ncols, i%ncols].legend()
+            i += 1
+    plt.savefig(save_path, bbox_inches = 'tight')
+    plt.close()
+
+def visualise_GEV(mu, sigma, xi, ys, save_path):
+    """
+    Visualise the Generalized Extreme Value distribution.
+    """
+    fig, axs = plt.subplots(2,1, figsize = (6.4, 9.6))
+    sns.set_theme()
+    x = np.linspace(-10, 50, 300)
+    ypdf = GEVpdf(jnp.repeat(mu, 300), jnp.repeat(sigma,300), jnp.repeat(xi,300), x)
+    ycdf = GEV(jnp.repeat(mu, 300), jnp.repeat(sigma,300), jnp.repeat(xi,300), x)
+    
+    ymax = ypdf.max()
+    
+    
+    axs[0].plot(x, ypdf)
+    # Add ticks corresponding to the true values
+    for i in range(len(ys)):
+        # Find i such that x[i] is the closest to ys[i]
+        iref = np.argmin(np.abs(x - ys[i]))
+        axs[0].vlines(x = x[iref], ymin = -ymax/50, ymax = ypdf[iref], color = 'black', linewidths = .5)
+    
+    # Plot empirical CDF
+    axs[1].plot(x, ycdf)
+    sns.ecdfplot(ys, ax = axs[1], stat = 'proportion', color = 'black')
+    
     plt.savefig(save_path)
     plt.close()
     

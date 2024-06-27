@@ -5,7 +5,7 @@
 #SBATCH --account tbeucler_downscaling
 #SBATCH --mail-user Antoine.Leclerc@unil.ch
 #SBATCH --mail-type END,FAIL
-#SBATCH --time 3:00:00
+#SBATCH --time 20:00:00
 
 # Paths and output
 #SBATCH --chdir /work/FAC/FGSE/IDYST/tbeucler/downscaling/alecler1/ConvectiveThunderstormWindGust_ML/src
@@ -14,12 +14,11 @@
 # Ressources
 #SBATCH --nodes 1
 #SBATCH --ntasks 1
-#SBATCH --cpus-per-task 1
-#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task 16
 #SBATCH --mem 128G
 
 # Node specificities
-#SBATCH --partition gpu
+#SBATCH --partition cpu
 
 # Environment
 #SBATCH --export NONE
@@ -27,12 +26,12 @@
 
 module purge
 
+module load gcc r
+
 conda deactivate
 conda activate AlpthNN
 
-nvidia-smi
-
-echo "python3 ../script/runExperiment.py --experiment-path $1 $2"
-python3 ../script/runExperiment.py --experiment-path $1 $2
+echo "python3 ../script/runRExperiment.py --experiment-path $1 $2"
+python3 ../script/runRExperiment.py --experiment-path $1 $2
 
 
