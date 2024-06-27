@@ -1,6 +1,2 @@
 ./test/experiments/
 ./test/R_experiments/
-./script/createBaseline.sbatch
-./script/intersectDates.sbatch
-./script/runExperiment.sbatch
-./script/runRExperiment.sbatch
