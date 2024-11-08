@@ -1,0 +1,3 @@
+./test/experiments/
+./test/R_experiments/
+./script/*.sbatch

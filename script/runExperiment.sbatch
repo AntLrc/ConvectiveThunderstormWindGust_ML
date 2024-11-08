@@ -21,7 +21,6 @@
 # Node specificities
 #SBATCH --partition gpu
 
-
 # Environment
 #SBATCH --export NONE
 
@@ -33,5 +32,7 @@ conda activate AlpthNN
 
 nvidia-smi
 
-python3 ../script/runExperiment.py --experiment-path $1
+echo "python3 ../script/runExperiment.py --experiment-path $1 $2 $3 $4"
+python3 ../script/runExperiment.py --experiment-path $1 $2 $3 $4
+
 

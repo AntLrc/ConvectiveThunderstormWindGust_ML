@@ -25,10 +25,9 @@ def doubleexp_jvp(primals, tangents):
     resvar = jnp.where(jnp.logical_or(primals_out == 0., primals_out == 1.), 0.*(mudot+sigmadot+ydot), -primals_out*exp(-(yval-muval)/sigmaval)*(mudot/sigmaval - ydot/sigmaval + (yval-muval)*sigmadot/sigmaval**2))
     return primals_out, resvar
 
-
 def GEV(mu, sigma, xi, y):
     """
-    Computes the Generalized Extreme Value CDF. Raises error if xi equal to zero.
+    Computes the Generalized Extreme Value CDF.
     """
     
     yred = (y - mu)/sigma
@@ -53,7 +52,27 @@ def GEV(mu, sigma, xi, y):
                                         1.,
                                         0.)))
     
+def GEVpdf(mu, sigma, xi, y):
+    yred = (y - mu)/sigma
+    y0 = jnp.logical_and(xi > 0, yred <= -1/xi)
+    y1 = jnp.logical_and(xi < 0, yred >= -1/xi)
     
+    xival = jnp.where(xi == 0, 0.5, xi)
+    yredval = jnp.where(jnp.logical_or(y0,y1), (jnp.log(2)**(-xival) - 1)/xival, yred)
+    
+    yInBoundary = jnp.logical_or(
+        jnp.logical_and(xi < 0, yred < -1/xival),
+        jnp.logical_and(xi > 0, yred > -1/xival)
+    )
+    
+    yInBoundary = jnp.logical_or(yInBoundary, xi == 0)
+    
+    ty = jnp.where(xi ==0, exp(-yredval), (1+xival*yredval)**(-1/xi))
+    
+    return jnp.where(yInBoundary,
+                     (1/sigma)*ty**(xi+1)*exp(-ty),
+                     0.)
+                                
 def gevCRPS(mu, sigma, xi, y):
     """
     Compute the closed form of the Continuous Ranked Probability Score (CRPS) for the Generalized Extreme Value distribution.
@@ -86,8 +105,8 @@ def gevCRPS(mu, sigma, xi, y):
                                         sigma*(-yred - 1/xival)*(1- 2*gevval) - sigma/xival*exp(lgamma(1-xival)) * 2**xival,
                                         sigma*(-yred - 1/xival)*(1- 2*gevval) - sigma/xival*exp(lgamma(1-xival)) * (2**xival - 2))))
 
-@partial(jit, static_argnums = (2,3))
-def gevCRPSLoss(param_pred, y_true, total_len, batch_size):
+@partial(jit, static_argnums = (2,3,4))
+def gevCRPSLoss(param_pred, y_true, total_len, batch_size, n_clusters):
     """
     Compute the CRPS loss for the Generalized Extreme Value distribution.
     Based on Friedrichs and Thorarinsdottir (2012), adapted from https://github.com/louisPoulain/TCBench_0.1
@@ -101,24 +120,25 @@ def gevCRPSLoss(param_pred, y_true, total_len, batch_size):
     sigma = jnp.repeat(sigma, clusters_len, axis = 1, total_repeat_length = total_len)
     xi = jnp.repeat(xi, clusters_len, axis = 1, total_repeat_length = total_len)
     
-    coeffs = jnp.repeat(1/clusters_len, clusters_len, axis = 0, total_repeat_length = total_len)
-    coeffs = jnp.repeat(jnp.expand_dims(coeffs, 0), batch_size, axis = 0)
+    coeffs = jnp.repeat(1/clusters_len, clusters_len, axis = 0, total_repeat_length = total_len)/n_clusters
     
-    crps = gevCRPS(mu, sigma, xi, jnp.concat(y_true, axis = 1))
+    yconcat = jnp.concatenate(y_true, axis = 1)
     
-    crps = crps * coeffs
+    crps = gevCRPS(mu, sigma, xi, yconcat)
+    
+    crps = crps@coeffs
     
     return crps.sum()/batch_size
 
-# def expi_tree(x):
-#      sh = x.shape
-#      xl = jnp.split(x, sh[1], axis = 1)
-#      xl = jax.tree.map(lambda x:jnp.concatenate(jax.tree.map(expi, jnp.split(x, sh[0], axis = 0))), xl)
-#      return jnp.concatenate(xl, axis = 1)
- 
- 
+def returnLevel(mu, sigma, xi, p):
+    yp = -jnp.log(1-p)
+    xival = jnp.where(xi == 0, 0.5, xi)
+    return jnp.where(xi == 0, mu - sigma*jnp.log(yp), mu - sigma/xival*(1 - yp**(-xival)))
 
-
-
-
- 
+def returnLevelLoss(param_pred, y_true, total_len, batch_size, n_clusters, p):
+    mu,sigma,xi = jnp.split(param_pred, 3, axis = 1)
+    rlevs = returnLevel(mu, sigma, xi, jnp.repeat(p, n_clusters))
+    emprlevs = jnp.asarray(tuple(map(lambda x: jnp.percentile(x, 100*(1-p), method = 'linear', axis = -1), y_true))).T
+    return jnp.mean((rlevs - emprlevs)**2)
+    
+    

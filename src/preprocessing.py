@@ -96,18 +96,7 @@ def intersectDates(NNpreinputDir, yearInt = None):
         labels.close()
         baselines.close()
         
-        # Delete old files
-        # os.remove(os.path.join(NNpreinputDir, year + "_Pangu.nc"))
-        # os.remove(os.path.join(NNpreinputDir, year + "_labels.nc"))
-        
-        # Rename new files
-        # os.rename(os.path.join(NNpreinputDir, "B" + year + "_Pangu.nc"), os.path.join(NNpreinputDir, year + "_Pangu.nc"))
-        # os.rename(os.path.join(NNpreinputDir, "B" + year + "_labels.nc"), os.path.join(NNpreinputDir, year + "_labels.nc"))
-        
-        # I have no other choice because I cannot modify nc file in place
-        
 def createInput(inputDir, years, outputDir):
-   
     files = os.listdir(inputDir)
     for file in files:
         print(file)
@@ -139,7 +128,100 @@ def completeCases(data):
                         subset = np.setdiff1d(np.array(data.data_vars), np.array(["CAPE", "CIN", "LCL", "LFC"])))
     return data
     
-    
+def adaptInput(inputDir, outputDir, years = None, filesuffix = "Pangu.nc", outputsuffix = "Interpolated.nc"):
+    """
+    Uses the input created for the Neural Network to prepare the input for R.
+    In practice, interpolates the data on the coordinates of the stations.
+    """
+    for file in os.listdir(inputDir):
+        if not file.endswith(filesuffix) or (years is not None and file[:4] not in years):
+            continue
+        data = xr.open_dataset(os.path.join(inputDir, file))
+        
+        # Selecting the coordinates of the stations. Using only one time step as the coordinates are the same for all time steps.
+        labels = xr.open_dataset(os.path.join(inputDir, file[:-len(filesuffix)] + "labels.nc")).isel(time = 0).drop("time")
+        lons, lats = labels.longitude, labels.latitude
+        # Create new file with data intersected on the coordinates of inputs.to_netcdf(os.path.join(outputDir, year + "_Pangu.nc"))labels
+        # Fill the missing values with 0, for CAPE and CIN
+        data.fillna(0.).interp(lon = lons, lat = lats).to_netcdf(os.path.join(outputDir, file[:-len(filesuffix)] + outputsuffix))
+        data.close()
+        labels.close()
 
+def gust_factor(wind, gust):
+    """
+    Computes the gust factor from the wind and gust speeds.
+    """
+    return (gust / wind).mean()
 
+def ERA5baseline(inputDir, inputInterpolationDir, outputDir, years, interpsuffix, outputsuffix = "ERA5.nc"):
+    """
+    years should be a list of int
+    """
+    for year in years:
+        for file in os.listdir(inputDir):
+            if not file.endswith(".nc"):
+                print(file)
+                continue
+            data = xr.open_dataset(os.path.join(inputDir, file))
+            if not year in data.time.dt.year:
+                data.close()
+                continue
+            data = data.sel(time = str(year))
+            # First, create a new data array with correct dates
+            dsinterp = xr.open_dataset(os.path.join(inputInterpolationDir, str(year) + "_" + interpsuffix))
+            npvals = data.fg10.values
+            npvals = npvals.reshape(-1, npvals.shape[-2], npvals.shape[-1])
+            npvals = np.repeat(np.expand_dims(npvals, axis = 0), repeats = len(dsinterp.lead_time), axis = 0)
+            da = xr.DataArray(
+                data = npvals,
+                coords = {"lead_time":(["lead_time"], dsinterp.lead_time.values),
+                          "time":(["time"], data.fg10.valid_time.values.reshape(-1)),
+                          "latitude":(["latitude"], data.latitude.values),
+                          "longitude":(["longitude"], data.longitude.values)},
+                name = "ERA5_gust"
+            )
+            # Then, interpolate it on the coordinates of the stations
+            lons, lats = dsinterp.longitude, dsinterp.latitude
+            times = dsinterp.time
+            da = da.sel(time = times).interp(longitude = lons, latitude = lats)
+            ds = da.to_dataset()
+            ds.to_netcdf(os.path.join(outputDir, str(year) + "_" + outputsuffix))
+            data.close()
+            dsinterp.close()
+            ds.close()
+            
+            
+            
 
+def add_persistant_vars(inputDir, outputDir, years = None, filesuffix = "Pangu.nc", labelsuffix = "labels.nc", outputsuffix = "Pangu.nc"):
+    """
+    Adds the gust at time - lead_time to the input data.
+    """
+    files = os.listdir(inputDir)
+    files.sort()
+    # The files are named yyyy_labels.nc and yyyy_input.nc
+    # Keep only years for which we have both labels and input
+    fileyears = [file[:4] for file in files]
+    for year in set(fileyears):
+        fileyears.remove(year)
+    for year in fileyears:
+        if years is not None and not year in years and not int(year) in years:
+            continue
+        inputs = xr.open_dataset(os.path.join(inputDir, year + "_" + filesuffix))
+        labels = xr.open_dataset(os.path.join(inputDir, year + "_" + labelsuffix))
+        for var in labels.data_vars:
+            # Create var
+            da = xr.DataArray(
+                data = np.repeat(np.expand_dims(labels[var].values, axis = 0), len(inputs.lead_time), axis = 0),
+                dims = ('lead_time', 'time', 'station'),
+                coords = {'lead_time': inputs.lead_time,
+                            'time': labels.time,
+                            'station': labels.station},
+            )
+            # Shift vars to make it persistant
+            for lt in da.lead_time.values:
+                da[da.lead_time == lt] = da[da.lead_time == 0].shift(time = lt).values
+            inputs[var] = da.sel(time = inputs.time)
+        inputs.to_netcdf(os.path.join(outputDir, year + "_" + outputsuffix))
+        inputs.close()
+        labels.close()
