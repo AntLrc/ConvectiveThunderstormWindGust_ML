@@ -15,7 +15,7 @@ import matplotlib.lines as mlines
 
 import os
 
-from cnn_losses import GEV, gevCRPSLoss, GEVpdf
+from nn_losses import GEV, gevCRPSLoss, GEVpdf
 
 from storm import Storm, Storms
 

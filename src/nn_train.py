@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import flax.linen as nn
 import optax
 
-from cnn_losses import gevCRPSLoss
+from nn_losses import gevCRPSLoss
 from flax.training import train_state
 
 from functools import partial

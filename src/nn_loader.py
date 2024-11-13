@@ -16,9 +16,9 @@ import pickle
 
 import os
 
-from cnn_block import *
-from cnn_train import train_loop, createTrainState, createBatches, loss_and_CRPS, mae
-from cnn_losses import gevCRPSLoss, gevCRPS, returnLevel, returnLevelLoss
+from nn_block import *
+from nn_train import train_loop, createTrainState, createBatches, loss_and_CRPS, mae
+from nn_losses import gevCRPSLoss, gevCRPS, returnLevel, returnLevelLoss
 from utils import PIT_histogram, stormplot, Metricsevolution, Paramdistribution
 
 

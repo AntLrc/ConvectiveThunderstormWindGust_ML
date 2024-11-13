@@ -779,7 +779,7 @@ class RExperiment:
         def allCRPS(self, save = False):
             # Compute the CRPS for all clusters, time steps and folds
             # First recreate the inputs (which won't be used to compute CRPS as predicitons were already made when the model was run)
-            # Same calculations as cnn_loader.Experiment.create_inputs
+            # Same calculations as nn_loader.Experiment.create_inputs
             # Creating the test files
             if not os.path.exists(os.path.join(self.experiment.folders['scratch']['folder'], "test_set.pkl")):
                 npinputs_t = None
