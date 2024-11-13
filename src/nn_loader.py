@@ -23,11 +23,16 @@ from utils import pit_histogram, storm_plot, metrics_evolution, param_distributi
 
 
 class Experiment:
-    """
-    Class to load the data and preprocess it for the CNN model.
-    """
 
     def __init__(self, experiment_file):
+        """
+        Class to load the data and preprocess it for the NN models.
+        
+        Parameters
+        ----------
+        experiment_file : str
+            Path to the experiment file.
+        """
         with open(experiment_file, "rb") as f:
             experiment = pickle.load(f)
         self.expnumber = experiment_file.split("_")[-1].split(".")[0]
@@ -60,9 +65,6 @@ class Experiment:
                         self.folders[k][subk] = subv
         self.features = experiment["features"]
         self.label = experiment["label"]
-        # self.model_spatial = experiment.get('model_spatial', "Conv")
-        # self.model_temporal = experiment.get('model_temporal', "Dense64")
-        # self.model_distributional = experiment.get('model_distributional', "DDNN")
         self.nn_kwargs = experiment.get("nn_kwargs", {})
         self.model_kwargs = experiment.get("model_kwargs", {})
         default_model_kwargs = {
@@ -551,7 +553,7 @@ class Experiment:
             "VisionTransformer": VisionTransformer,
             "AddTrainableXi": AddTrainableXi,
             "SimpleBaseline": SimpleBaseline,
-            "DDNN_GEV": DdNNGev,
+            "DDNN_GEV": GevDDNN,
             "Discrete_NN": DiscreteNN,
         }
         if not self.nn_kwargs["spatial"] is None:

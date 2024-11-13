@@ -5,7 +5,7 @@ from typing import Any, Callable, Sequence, Tuple
 from flax import linen as nn
 
 
-# Temporal NN
+# Neural Networks blocks used as building blocks for the main model (temporal part).
 class DenseNN(nn.Module):
     features: int
     hidden_layers: int = 0
@@ -19,7 +19,7 @@ class DenseNN(nn.Module):
         return nn.Dense(features=self.features)(x)
 
 
-# Spatial NN
+# Neural Networks blocks used as building blocks for the main model (spatial part).
 class DeepFCN(nn.Module):
     features: int
     hidden_layers: int = 0
@@ -291,7 +291,7 @@ class VisionTransformer(nn.Module):
         return x
 
 
-# Distributional NNs
+# Neural Networks blocks used as building blocks for the main model (distributional part).
 class AddTrainableXi(nn.Module):
     constant_shape: tuple
 
@@ -336,7 +336,7 @@ class SimpleBaseline(nn.Module):
         return jnp.concatenate([mu_repeated, sigma_repeated, xi_repeated], axis=1)
 
 
-class DdNNGev(nn.Module):
+class GevDDNN(nn.Module):
     n_clusters: int = 5
     hidden_layers: int = 0
     hidden_features: int = 64
@@ -383,7 +383,7 @@ class AlpThNN(nn.Module):
     n_clusters: int = 5
     spatial_nn: Callable = ConvNeXtNN(width=20, height=34)
     temporal_nn: Callable = nn.Dense(features=64)
-    dd_nn: Callable = DdNNGev(n_clusters=10)
+    dd_nn: Callable = GevDDNN(n_clusters=10)
 
     @nn.compact
     def __call__(self, x_s, x_t, training: bool = False):

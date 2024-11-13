@@ -13,28 +13,65 @@ from sklearn import metrics
 
 class Clustering:
     def __init__(self, data, **kwargs):
+        """
+        Class to cluster stations based on meteorological data.
+        
+        Parameters
+        ----------
+        data: xarray.Dataset
+            Dataset of meteorological data. Should have the following dimensions:
+            - station: the station ID
+            - time: the time of the observation
+            - latitude: the latitude of the station
+            - longitude: the longitude of the station
+            - the meteorological variables to cluster
+        correlations: str, optional
+            Path to the file containing the correlations between stations. If not
+            provided, the correlations are computed from the data as the correlation
+            between stations for the meteorological variable provided in the `var`
+            argument.
+        var: str or list of str, optional
+            The meteorological variable to use to compute the correlations. If a list is
+            provided, the correlations are computed for each variable. Default is
+            "wind_speed_of_gust".
+        """
         self.data = data
-        self.load_affinities(**kwargs)
+        self.load_correlations(**kwargs)
         self.clusters = {}
         self.plot = self.Plotter(self)
         self.save = self.Saver(self)
 
-    def load_affinities(self, **kwargs):
-        aff_file = kwargs.pop("affinities", None)
-        if not (aff_file is None):
+    def load_correlations(self, **kwargs):
+        """
+        Load the correlations between stations from a file or compute them from the data.
+        
+        Parameters
+        ----------
+        correlations: str, optional
+            Path to the file containing the correlations between stations. If not
+            provided, the correlations are computed from the data as the correlation
+            between stations for the meteorological variable provided in the `var`
+            argument.
+        var: str or list of str, optional
+            The meteorological variable to use to compute the correlations. If a list is
+            provided, the correlations are computed for each variable. Default is
+            "wind_speed_of_gust".
+        """
+        correlation_file = kwargs.pop("correlations", None)
+        if not (correlation_file is None):
             try:
-                with open(aff_file, "rb") as f:
-                    affs = pickle.load(f)
-                self.affinities = affs
+                with open(correlation_file, "rb") as f:
+                    corrs = pickle.load(f)
+                self.correlations = corrs
             except:
-                return self.load_affinities(**kwargs)
+                return self.load_correlations(**kwargs)
         else:
             var = kwargs.pop("var", "wind_speed_of_gust")
             nb_of_stations = len(self.data.station.values)
-            self.affinities = {}
+            self.correlations = {}
             if isinstance(var, list):
                 for v in var:
-                    self.affinities[v] = np.array(
+                    self.correlations[v] = np.array(
                         [
                             [
                                 xr.corr(
@@ -48,7 +85,7 @@ class Clustering:
                         ]
                     )
             else:
-                self.affinities[var] = np.array(
+                self.correlations[var] = np.array(
                     [
                         [
                             xr.corr(
@@ -64,8 +101,26 @@ class Clustering:
 
     def spectral_station_clustering(self, n_clusters, affinities):
         """
-        Cluster data based on correlation between station, aggregated over time, with Spectral Clustering algorithm.
-        Made for the filtered SwissMetNet dataset.
+        Cluster data based on correlation between station, aggregated over time,
+        with Spectral Clustering algorithm. Made for the filtered SwissMetNet dataset.
+        
+        Parameters
+        ----------
+        n_clusters: int
+            Number of clusters to create.
+        affinities: np.array
+            Affinities between stations. Should be a square matrix of shape
+            (n_stations, n_stations) containing positive values. Values could be
+            absolute correlations but are not limited to that. Example used in the
+            article is:
+            np.abs(self.correlations["wind_speed_of_gust"]*self.correlations["precipitation"])
+        
+        Returns
+        -------
+        labels: xr.DataArray
+            Labels of the stations for each cluster. Shape (n_stations,).
+        score: float
+            Silhouette score of the clustering.
         """
         clustering = SpectralClustering(
             n_clusters=n_clusters,
@@ -89,11 +144,26 @@ class Clustering:
 
     class Plotter:
         def __init__(self, clustering):
+            """
+            Class to plot the results of the clustering.
+            
+            Parameters
+            ----------
+            clustering: Clustering
+                Clustering object.
+            """
             self.clustering = clustering
 
         def clusters(self, n_clusters, savepath):
             """
-            Plot the clusters of the stations.
+            Plot the clusters of the stations on a map.
+            
+            Parameters
+            ----------
+            n_clusters: int
+                Number of clusters to plot.
+            savepath: str
+                Path to save the figure
             """
             google_tiles = cimgt.GoogleTiles(style="satellite")
             fig, ax = plt.subplots(subplot_kw={"projection": google_tiles.crs})
@@ -114,6 +184,15 @@ class Clustering:
             plt.close()
 
         def silhouette_score(self, save_path):
+            """
+            Plot the silhouette score of the clustering for different number
+            of clusters.
+            
+            Parameters
+            ----------
+            save_path: str
+                Path to save the figure.
+            """
             fig, ax = plt.subplots(figsize=(6, 3))
             ax.plot(
                 [n for n in self.clustering.clusters.keys()],
@@ -132,9 +211,28 @@ class Clustering:
 
     class Saver:
         def __init__(self, clustering):
+            """
+            Class to save the results of the clustering.
+            
+            Parameters
+            ----------
+            clustering: Clustering
+                Clustering object.
+            """
             self.clustering = clustering
 
         def csv(self, n_clusters, savepath):
+            """
+            Save the clusters of the stations in a csv file suitable for the
+            usage by postprocessing scripts.
+            
+            Parameters
+            ----------
+            n_clusters: int
+                Number of clusters with which spectral clustering was performed.
+            savepath: str
+                Path to save the csv file.
+            """
             clusterds = self.clustering.clusters[n_clusters]["labels"]
             clusterlist = [
                 list(clusterds.where(clusterds == i).dropna("station").station.values)
