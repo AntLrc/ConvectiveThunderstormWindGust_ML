@@ -17,7 +17,7 @@ def main():
     NNinputdir = args.dir
     year = args.year
     
-    pp.intersectDates(NNinputdir, year)
+    pp.intersect_dates(NNinputdir, year)
 
 if __name__ == "__main__":
     main()

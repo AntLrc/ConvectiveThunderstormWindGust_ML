@@ -19,7 +19,7 @@ def main():
     year = args.year
     outputDir = args.output
     
-    pp.createBaselineInput(inputDir, year, outputDir)
+    pp.create_baseline_input(inputDir, year, outputDir)
 
 if __name__ == "__main__":
     main()
