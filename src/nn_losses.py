@@ -12,11 +12,45 @@ from jax import jit, custom_jvp
 # Custom definition of exp(-exp) to avoid overflow. ONLY VALID FOR SIGMA AND MU "SLOWLY" VARYING
 @custom_jvp
 def double_exp(mu, sigma, y):
+    """
+    Custom definition of exp(-exp((y-mu)/sigma)) to avoid overflow. ONLY VALID FOR SIGMA AND MU
+    "SLOWLY" VARYING (otehrwise, numerical instability may arise).
+    
+    Parameters
+    ----------
+    mu : float or array-like
+        Location parameter.
+    sigma : float or array-like
+        Scale parameter.
+    y : float or array-like
+        Value at which to evaluate the function.
+        
+    Returns
+    -------
+    float or array-like
+        Value of the double exponential function.
+    """
     return exp(-exp(-(y - mu) / sigma))
 
 
 @double_exp.defjvp
 def double_exp_jvp(primals, tangents):
+    """
+    JVP for the double exponential function, to be used in the context of
+    automatic differentiation.
+    
+    Parameters
+    ----------
+    primals : tuple
+        Tuple containing the primal values.
+    tangents : tuple
+        Tuple containing the tangent values.
+    
+    Returns
+    -------
+    tuple
+        Tuple containing the primal and tangent values.
+    """
     mu, sigma, y = primals
     mu_dot, sigma_dot, y_dot = tangents
     primals_out = double_exp(mu, sigma, y)
@@ -41,6 +75,22 @@ def double_exp_jvp(primals, tangents):
 def gev(mu, sigma, xi, y):
     """
     Computes the Generalized Extreme Value CDF.
+    
+    Parameters
+    ----------
+    mu : float or array-like
+        Location parameter.
+    sigma : float or array-like
+        Scale parameter.
+    xi : float or array-like
+        Shape parameter.
+    y : float or array-like
+        Value at which to evaluate the function.
+        
+    Returns
+    -------
+    float or array-like
+        Value of the Generalized Extreme Value CDF.
     """
 
     y_red = (y - mu) / sigma
@@ -67,6 +117,25 @@ def gev(mu, sigma, xi, y):
 
 
 def gev_pdf(mu, sigma, xi, y):
+    """
+    Computes the Generalized Extreme Value PDF.
+    
+    Parameters
+    ----------
+    mu : float or array-like
+        Location parameter.
+    sigma : float or array-like
+        Scale parameter.
+    xi : float or array-like
+        Shape parameter.
+    y : float or array-like
+        Value at which to evaluate the function.
+        
+    Returns
+    -------
+    float or array-like
+        Value of the Generalized Extreme Value PDF.
+    """
     y_red = (y - mu) / sigma
     y0 = jnp.logical_and(xi > 0, y_red <= -1 / xi)
     y1 = jnp.logical_and(xi < 0, y_red >= -1 / xi)
@@ -90,8 +159,25 @@ def gev_pdf(mu, sigma, xi, y):
 
 def gev_crps(mu, sigma, xi, y):
     """
-    Compute the closed form of the Continuous Ranked Probability Score (CRPS) for the Generalized Extreme Value distribution.
-    Based on Friedrichs and Thorarinsdottir (2012).
+    Compute the closed form of the Continuous Ranked Probability Score (CRPS) for
+    the Generalized Extreme Value distribution. Based on Friedrichs and
+    Thorarinsdottir (2012).
+    
+    Parameters
+    ----------
+    mu : float or array-like
+        Location parameter.
+    sigma : float or array-like
+        Scale parameter.
+    xi : float or array-like
+        Shape parameter.
+    y : float or array-like
+        Value at which to evaluate the CRPS.
+        
+    Returns
+    -------
+    float or array-like
+        Value of the CRPS.
     """
 
     y_red = (y - mu) / sigma
@@ -141,7 +227,26 @@ def gev_crps(mu, sigma, xi, y):
 def gev_crps_loss(param_pred, y_true, total_len, batch_size, n_clusters):
     """
     Compute the CRPS loss for the Generalized Extreme Value distribution.
-    Based on Friedrichs and Thorarinsdottir (2012), adapted from https://github.com/louisPoulain/TCBench_0.1
+    Based on Friedrichs and Thorarinsdottir (2012), adapted from
+    https://github.com/louisPoulain/TCBench_0.1
+    
+    Parameters
+    ----------
+    param_pred : array-like
+        Predicted parameters of the GEV distribution.
+    y_true : array-like
+        True values.
+    total_len : int
+        Total length of the concatenated true values.
+    batch_size : int
+        Batch size.
+    n_clusters : int
+        Number of clusters.
+        
+    Returns
+    -------
+    float
+        Value of the CRPS loss.
     """
 
     mu, sigma, xi = jnp.split(param_pred, 3, axis=1)
@@ -169,6 +274,25 @@ def gev_crps_loss(param_pred, y_true, total_len, batch_size, n_clusters):
 
 
 def return_level(mu, sigma, xi, p):
+    """
+    Compute the return levels for the Generalized Extreme Value distribution.
+    
+    Parameters
+    ----------
+    mu : float or array-like
+        Location parameter.
+    sigma : float or array-like
+        Scale parameter.
+    xi : float or array-like
+        Shape parameter.
+    p : float or array-like
+        Return period.
+        
+    Returns
+    -------
+    float or array-like
+        Value of the return levels.
+    """
     yp = -jnp.log(1 - p)
     xi_val = jnp.where(xi == 0, 0.5, xi)
     return jnp.where(
@@ -177,6 +301,24 @@ def return_level(mu, sigma, xi, p):
 
 
 def return_level_loss(param_pred, y_true, total_len, batch_size, n_clusters, p):
+    """
+    Compute the return level loss for the Generalized Extreme Value distribution.
+    
+    Parameters
+    ----------
+    param_pred : array-like
+        Predicted parameters of the GEV distribution.
+    y_true : array-like
+        True values.
+    total_len : int
+        Total length of the concatenated true values.
+    batch_size : int
+        Batch size.
+    n_clusters : int
+        Number of clusters.
+    p : float
+        Return period.
+    """
     mu, sigma, xi = jnp.split(param_pred, 3, axis=1)
     r_levs = return_level(mu, sigma, xi, jnp.repeat(p, n_clusters))
     emp_r_levs = jnp.asarray(

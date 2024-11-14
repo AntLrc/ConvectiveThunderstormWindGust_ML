@@ -29,6 +29,33 @@ def loss_and_crps(
     regularisation=None,
     alpha=0.01,
 ):
+    """
+    Compute the CRPS and the loss of the model on a batch of data.
+    
+    Parameters
+    ----------
+    state : flax.training.train_state.TrainState
+        State of the model.
+    params : dict
+        Parameters (weight and biases) of the model.
+    batch : tuple
+        Tuple of the form (features_s, features_t, labels).
+    batch_size : int
+        Size of the batch.
+    total_len : int
+        Total length of the time series.
+    n_clusters : int
+        Number of clusters.
+    regularisation : str, optional
+        Regularisation to apply to the loss. Default is None. Can be "l1" or "l2".
+    alpha : float, optional
+        Regularisation parameter. Default is 0.01.
+    
+    Returns
+    -------
+    tuple
+        Tuple of the form (crps, loss).
+    """
     x_s, x_t, y_true = batch
     y_pred = state.apply_fn(params, x_s, x_t)
     crps = gev_crps_loss(y_pred, y_true, total_len, batch_size, n_clusters)
@@ -49,6 +76,33 @@ def mae(
     regularisation=None,
     alpha=0.01,
 ):
+    """
+    Compute the Mean Absolute Error of the model on a batch of data.
+    
+    Parameters
+    ----------
+    state : flax.training.train_state.TrainState
+        State of the model.
+    params : dict
+        Parameters (weight and biases) of the model.
+    batch : tuple
+        Tuple of the form (features_s, features_t, labels).
+    batch_size : int
+        Size of the batch.
+    total_len : int
+        Total length of the time series.
+    n_clusters : int
+        Number of clusters.
+    regularisation : str, optional
+        Regularisation to apply to the loss. Default is None. Can be "l1" or "l2".
+    alpha : float, optional
+        Regularisation parameter. Default is 0.01.
+    
+    Returns
+    -------
+    tuple
+        Tuple of the form (mae, loss).
+    """
     x_s, x_t, y_true = batch
     y_pred = state.apply_fn(params, x_s, x_t)
     y_true = jnp.concatenate(y_true, axis=1)
@@ -67,6 +121,31 @@ class TrainState(train_state.TrainState):
 def create_train_state(
     model, rng, learning_rate, batch_size, features, stationwise=False, n_stations=0
 ):
+    """
+    Create a TrainState object.
+    
+    Parameters
+    ----------
+    model : flax.linen.Module
+        Model to train.
+    rng : jnp.ndarray
+        Random number generator.
+    learning_rate : float
+        Learning rate of the optimizer.
+    batch_size : int
+        Size of the batch.
+    features : int
+        Number of features.
+    stationwise : bool, optional
+        If True, the model is stationwise. Default is False.
+    n_stations : int, optional
+        Number of stations. Default is 0.
+    
+    Returns
+    -------
+    TrainState
+        TrainState object.
+    """
     if stationwise:
         params = model.init(
             rng,
@@ -84,6 +163,28 @@ def create_train_state(
 
 
 def create_batches(features_s, features_t, labels, batch_size, rng):
+    """
+    Create batches of data.
+    
+    Parameters
+    ----------
+    features_s : array-like
+        Source features.
+    features_t : array-like
+        Target features.
+    labels : array-like
+        Labels.
+    batch_size : int
+        Size of the batch.
+    rng : jnp.ndarray
+        Random number generator.
+    
+    
+    Yields
+    ------
+    tuple
+        Tuple of the form (features_s, features_t, labels).
+    """
     n_batches = len(features_s) // batch_size
     # Create shuffled indices
     indices = jax.random.permutation(rng, len(features_s))
@@ -108,6 +209,38 @@ def train_step(
     alpha=0.01,
     target=0,
 ):
+    """
+    Perform a training step.
+    
+    Parameters
+    ----------
+    state : flax.training.train_state.TrainState
+        State of the model.
+    x_s : array-like
+        Spatial features.
+    x_t : array-like
+        Temporal features.
+    y_true : array-like
+        True values.
+    batch_size : int
+        Size of the batch.
+    total_len : int
+        Total length of the time series.
+    n_clusters : int
+        Number of clusters.
+    regularisation : str, optional
+        Regularisation to apply to the loss. Default is None. Can be "l1" or "l2".
+    alpha : float, optional
+        Regularisation parameter. Default is 0.01.
+    target : int, optional
+        Target of the model. Default is 0, corresponding to the GEV distribution.
+        If 1, the target is the mean absolute error.
+    
+    Returns
+    -------
+    flax.training.train_state.TrainState
+        Updated state of the model.
+    """
     if target == 0:
 
         def loss_fn(
@@ -196,6 +329,9 @@ def train_loop(
     target=0,
     early_stopping=6,
 ):
+    """
+    Perform the training loop.
+    """
     train_loss_arr = []
     train_crps_arr = []
     val_loss_arr = []
