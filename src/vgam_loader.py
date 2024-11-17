@@ -20,6 +20,24 @@ from utils import storm_plot, metrics_evolution
 
 
 def double_exp(mu, sigma, y):
+    """
+    Custom definition of exp(-exp((y-mu)/sigma)) to avoid overflow. ONLY VALID FOR SIGMA AND MU
+    "SLOWLY" VARYING (otehrwise, numerical instability may arise).
+    
+    Parameters
+    ----------
+    mu : float or array-like
+        Location parameter.
+    sigma : float or array-like
+        Scale parameter.
+    y : float or array-like
+        Value at which to evaluate the function.
+        
+    Returns
+    -------
+    float or array-like
+        Value of the double exponential function.
+    """
     return np.exp(-np.exp(-(y - mu) / sigma))
 
 
@@ -30,6 +48,22 @@ def l_gamma(x):
 def gev(mu, sigma, xi, y):
     """
     Computes the Generalized Extreme Value CDF.
+    
+    Parameters
+    ----------
+    mu : float or array-like
+        Location parameter.
+    sigma : float or array-like
+        Scale parameter.
+    xi : float or array-like
+        Shape parameter.
+    y : float or array-like
+        Value at which to evaluate the CDF.
+        
+    Returns
+    -------
+    float or array-like
+        Value of the Generalized Extreme Value CDF.
     """
 
     y_red = (y - mu) / sigma
@@ -54,6 +88,25 @@ def gev(mu, sigma, xi, y):
 
 
 def gev_pdf(mu, sigma, xi, y):
+    """
+    Computes the Generalized Extreme Value PDF.
+    
+    Parameters
+    ----------
+    mu : float or array-like
+        Location parameter.
+    sigma : float or array-like
+        Scale parameter.
+    xi : float or array-like
+        Shape parameter.
+    y : float or array-like
+        Value at which to evaluate the PDF.
+        
+    Returns
+    -------
+    float or array-like
+        Value of the Generalized Extreme Value PDF.
+    """
     y_red = (y - mu) / sigma
     y0 = np.logical_and(xi > 0, y_red <= -1 / xi)
     y1 = np.logical_and(xi < 0, y_red >= -1 / xi)
@@ -75,8 +128,25 @@ def gev_pdf(mu, sigma, xi, y):
 
 def gev_crps(mu, sigma, xi, y):
     """
-    Compute the closed form of the Continuous Ranked Probability Score (CRPS) for the Generalized Extreme Value distribution.
+    Compute the closed form of the Continuous Ranked Probability Score (CRPS)
+    for the Generalized Extreme Value distribution.
     Based on Friedrichs and Thorarinsdottir (2012).
+    
+    Parameters
+    ----------
+    mu : float or array-like
+        Location parameter.
+    sigma : float or array-like
+        Scale parameter.
+    xi : float or array-like
+        Shape parameter.
+    y : float or array-like
+        Value at which to evaluate the CRPS.
+        
+    Returns
+    -------
+    float or array-like
+        Value of the CRPS.
     """
 
     y_red = (y - mu) / sigma
@@ -123,6 +193,19 @@ def gev_crps(mu, sigma, xi, y):
 def visualise_gev(mu, sigma, xi, ys, save_path):
     """
     Visualise the Generalized Extreme Value distribution.
+    
+    Parameters
+    ----------
+    mu : float
+        Location parameter.
+    sigma : float
+        Scale parameter.
+    xi : float
+        Shape parameter.
+    ys : array-like
+        Values at which to evaluate the distribution.
+    save_path : str
+        Path to save the plot.
     """
     fig, axs = plt.subplots(2, 1, figsize=(6.4, 9.6))
     sns.set_theme()
@@ -150,11 +233,16 @@ def visualise_gev(mu, sigma, xi, ys, save_path):
 
 
 class RExperiment:
-    """
-    Class to load the data and preprocess it for the VGLM / VGAM model.
-    """
 
     def __init__(self, experiment_file):
+        """
+        Class to load the data and preprocess it for the VGAM / VGLM model.
+        
+        Parameters
+        ----------
+        experiment_file : str
+            Path to the experiment file.
+        """
         with open(experiment_file, "rb") as f:
             experiment = pickle.load(f)
         self.exp_number = experiment_file.split("_")[-1].split(".")[0]
@@ -378,7 +466,8 @@ class RExperiment:
 
     def create_inputs(self):
         """
-        Creating  the inputs for the VGAM / VGLM model from netcdf files."""
+        Creating  the inputs for the VGAM / VGLM model from netcdf files.
+        """
         print("Creating inputs...", flush=True)
         if not self.model_kwargs["data"] in ["normal", "mean", "collective"]:
             raise ValueError("Mode must be 'normal', 'mean' or 'collective'.")
@@ -744,6 +833,9 @@ class RExperiment:
         print("Done.", flush=True)
 
     def run(self):
+        """
+        Run the VGAM / VGLM model.
+        """
         # Create the inputs if needed
         fold_features_created = all(
             [
@@ -906,6 +998,9 @@ class RExperiment:
         self.save.experiment_file()
 
     def run_single(self, arg):
+        """
+        Run the VGAM / VGLM model for a single cluster, lead time and fold.
+        """
         cluster, lead_time, fold, seq_feat_sel = arg
         # Check if already trained
         if os.path.exists(
@@ -1105,7 +1200,20 @@ class RExperiment:
 
     def copy(self, **kwargs):
         """
-        Copy the experiment with new parameters.
+        Copy the experiment with new parameters. Useful to create a new experiment
+        based on an existing one with slight modifications.
+        
+        Parameters
+        ----------
+        kwargs : dict
+            New parameters for the experiment. Keys are the attributes to modify
+            and values are the new values. If target is a dictionary, the key
+            is the attribute to modify and the value is a dictionary with the
+            new values. It is possible to use as value a dictionary targetting
+            only one subparameter: in this case, the other subparameters are unchanged.
+            Example:
+            exp.copy(model_kwargs={"epochs": 100, "batch_size": 32})
+            # In this case, the learning rate is unchanged.
         """
         new_exp = RExperiment(self.files["experiment"])
         for key, value in kwargs.items():
@@ -1186,6 +1294,14 @@ class RExperiment:
 
     class Diagnostics:
         def __init__(self, experiment):
+            """
+            Class to compute diagnostics on the trained model.
+            
+            Parameters
+            ----------
+            experiment : Experiment
+                The experiment to diagnose.
+            """
             self.experiment = experiment
 
         def predict(
@@ -1199,6 +1315,28 @@ class RExperiment:
             clusters=None,
             folds=None,
         ):
+            """
+            Uses the trained model to predict the labels of the inputs.
+            
+            Parameters
+            ----------
+            inputs : xr.Dataset
+                The inputs to predict.
+            label : str
+                The label to predict.
+            features_filename : str
+                The filename where to save the features.
+            preds_filename : str
+                The filename where to save the predictions.
+            label_filename : str
+                The filename where to save the labels.
+            lead_times : list of int or int, optional
+                The lead times to consider. If None, all lead times are considered.
+            clusters : list of int or int, optional
+                The clusters to consider. If None, all clusters are considered.
+            folds : list of int or int, optional
+                The folds to consider. If None, all folds are considered.
+            """
             lead_times = (
                 self.experiment.filter["lead_times"][0]
                 if lead_times is None
@@ -1356,6 +1494,22 @@ class RExperiment:
             clusters=None,
             folds=None,
         ):
+            """
+            Uses the predictions and the labels to compute the CRPS.
+            
+            Parameters
+            ----------
+            preds_filename : str
+                The filename where the predictions are stored (only the prefix).
+            label_filename : str
+                The filename where the labels are stored (only the prefix).
+            lead_times : list of int or int, optional
+                The lead times to consider. If None, all lead times are considered.
+            clusters : list of int or int, optional
+                The clusters to consider. If None, all clusters are considered.
+            folds : list of int or int, optional
+                The folds to consider. If None, all folds are considered.
+            """
             lead_times = (
                 self.experiment.filter["lead_times"][0]
                 if lead_times is None
@@ -1411,9 +1565,17 @@ class RExperiment:
             return crps
 
         def all_crps(self, save=False):
-            # Compute the CRPS for all clusters, time steps and folds
-            # First recreate the inputs (which won't be used to compute CRPS as predicitons were already made when the model was run)
-            # Same calculations as nn_loader.Experiment.create_inputs
+            """
+            Compute the CRPS for all clusters, lead times and folds.
+            First recreate the inputs (which won't be used to compute CRPS as
+            predicitons were already made when the model was run). Same calculations
+            as nn_loader.Experiment.create_inputs.
+            
+            Parameters
+            ----------
+            save : bool, optional
+                If True, save the CRPS in a file.
+            """
             # Creating the test files
             if not os.path.exists(
                 os.path.join(
@@ -1607,382 +1769,24 @@ class RExperiment:
     # Plotting
     class Plotter:
         def __init__(self, experiment):
+            """
+            Class to plot the results of the experiment.
+            
+            Parameters
+            ----------
+            experiment : Experiment
+                The experiment to plot.
+            """
             self.experiment = experiment
-
-        def case_study(
-            self,
-            date,
-            lead_time,
-            weather_map_file=None,
-            all_lts=False,
-            cluster_nb=None,
-            precomputed=False,
-        ):
-            strdate = date.strftime("%Y%m%d%H%M")
-            stations = (
-                xr.open_dataset(self.experiment.files["test"]["labels"][0])
-                .isel(time=0)
-                .to_dataframe()[["latitude", "longitude"]]
-            )
-            stations = gpd.GeoDataFrame(
-                stations,
-                geometry=gpd.points_from_xy(stations.longitude, stations.latitude),
-                crs="EPSG:4326",
-            )
-            file = None
-            for f in self.experiment.files["test"]["inputs"]:
-                if date in xr.open_dataset(f).time.values:
-                    file = f
-                    break
-            if file is None:
-                raise ValueError(f"No test file found for date {date}")
-            l_file = None
-            for f in self.experiment.files["test"]["labels"]:
-                if date in xr.open_dataset(f).time.values:
-                    l_file = f
-                    break
-            if l_file is None:
-                raise ValueError(f"No test label file found for date {date}")
-            # Create inputs
-            ds0 = xr.open_dataset(file, engine="netcdf4").sel(time=date)
-            ds2d = xr.open_dataset(weather_map_file, engine="netcdf4").sel(
-                time=date, lead_time=lead_time
-            )
-            temperature = ds2d.t2m
-            pressure = ds2d.msl
-            wind = ds2d[["u10", "v10"]]
-            np_inputs_s = [None] * self.experiment.clusters["n"]
-            np_inputs_l = [None] * self.experiment.clusters["n"]
-            if (
-                self.experiment.Data["mean"] is None
-                or self.experiment.Data["std"] is None
-            ):
-                self.experiment.load_mean_std()
-            if not precomputed:
-                if not all_lts:
-                    ds = ds0.sel(lead_time=lead_time)
-                    for i_var in range(len(self.experiment.features)):
-                        # First obtaining corresponding data array
-                        var = self.experiment.features[i_var]
-                        if len(var.split("_")) == 2:
-                            var, var_level = var.split("_")
-                            var_level = int(var_level[:-3])
-                            if var == "wind":
-                                tmp = np.sqrt(
-                                    ds.sel(isobaricInhPa=var_level)["u10"] ** 2
-                                    + ds.sel(isobaricInhPa=var_level)["v10"] ** 2
-                                )
-                            else:
-                                tmp = ds.sel(isobaricInhPa=var_level)[var]
-                        else:
-                            if var == "wind":
-                                tmp = np.sqrt(ds["u10"] ** 2 + ds["v10"] ** 2)
-                            else:
-                                tmp = ds[var]
-                        # Selecting for each cluster, for each leadtime and converting to numpy array
-                        for i_cluster in range(self.experiment.clusters["n"]):
-                            tmp_cluster = tmp.sel(
-                                station=self.experiment.clusters["groups"][i_cluster]
-                            ).values
-                            tmp_cluster = (
-                                tmp_cluster - self.experiment.Data["mean"][i_var]
-                            ) / self.experiment.Data["std"][i_var]
-                            tmp_cluster = np.expand_dims(
-                                tmp_cluster, axis=len(tmp_cluster.shape)
-                            )
-                            np_inputs_s[i_cluster] = (
-                                tmp_cluster
-                                if np_inputs_s[i_cluster] is None
-                                else np.concatenate(
-                                    [np_inputs_s[i_cluster], tmp_cluster], axis=-1
-                                )
-                            )
-                    for i_cluster in range(self.experiment.clusters["n"]):
-                        if self.experiment.model_kwargs["data"] == "normal":
-                            np_inputs_s[i_cluster] = (
-                                np_inputs_s[i_cluster]
-                                .astype(np.float32)
-                                .reshape(-1, np_inputs_s[i_cluster].shape[-1])
-                            )
-                            df = pd.DataFrame(
-                                np_inputs_s[i_cluster], columns=self.experiment.features
-                            )
-                        elif self.experiment.model_kwargs["data"] == "mean":
-                            # For each cluster, for each feature, mean of the feature over the stations
-                            np_inputs_s[i_cluster] = (
-                                np_inputs_s[i_cluster]
-                                .astype(np.float32)
-                                .mean(axis=0, keepdims=True)
-                            )
-                            np_inputs_s[i_cluster] = np.repeat(
-                                np_inputs_s[i_cluster],
-                                len(self.experiment.clusters["groups"][i_cluster]),
-                                axis=0,
-                            )
-                            df = pd.DataFrame(
-                                np_inputs_s[i_cluster], columns=self.experiment.features
-                            )
-                        df.to_csv(
-                            os.path.join(
-                                self.experiment.folders["scratch"]["folder"],
-                                f"CASESTUDY_{i_cluster}_{strdate}_{lead_time}.csv",
-                            ),
-                            index=False,
-                        )
-                    for fold in range(self.experiment.model_kwargs["n_folds"]):
-                        for i_cluster in range(self.experiment.clusters["n"]):
-                            os.system(
-                                f"Rscript {self.experiment.files['R']['predict']} --test-predictors {os.path.join(self.experiment.folders['scratch']['folder'], f'CASESTUDY_{i_cluster}_{strdate}_{lead_time}.csv')} --output {os.path.join(self.experiment.folders['scratch']['folder'], f'CASESTUDY_{i_cluster}_{fold}_{strdate}_{lead_time}_preds.csv')} --model-file {os.path.join(self.experiment.folders['plot']['model'], f'{i_cluster}_{lead_time}_{fold}.rds')} --source {self.experiment.files['R']['source']}"
-                            )
-                else:
-                    for lt in self.experiment.filter["lead_times"]:
-                        ds = ds0.sel(lead_time=lt)
-                        np_inputs_s = [None] * self.experiment.clusters["n"]
-                        np_inputs_l = [None] * self.experiment.clusters["n"]
-                        for i_var in range(len(self.experiment.features)):
-                            # First obtaining corresponding data array
-                            var = self.experiment.features[i_var]
-                            if len(var.split("_")) == 2:
-                                var, var_level = var.split("_")
-                                var_level = int(var_level[:-3])
-                                if var == "wind":
-                                    tmp = np.sqrt(
-                                        ds.sel(isobaricInhPa=var_level)["u10"] ** 2
-                                        + ds.sel(isobaricInhPa=var_level)["v10"] ** 2
-                                    )
-                                else:
-                                    tmp = ds.sel(isobaricInhPa=var_level)[var]
-                            else:
-                                if var == "wind":
-                                    tmp = np.sqrt(ds["u10"] ** 2 + ds["v10"] ** 2)
-                                else:
-                                    tmp = ds[var]
-                            # Selecting for each cluster, for each leadtime and converting to numpy array
-                            for i_cluster in range(self.experiment.clusters["n"]):
-                                tmp_cluster = tmp.sel(
-                                    station=self.experiment.clusters["groups"][i_cluster]
-                                ).values
-                                tmp_cluster = (
-                                    tmp_cluster - self.experiment.Data["mean"][i_var]
-                                ) / self.experiment.Data["std"][i_var]
-                                tmp_cluster = np.expand_dims(
-                                    tmp_cluster, axis=len(tmp_cluster.shape)
-                                )
-                                np_inputs_s[i_cluster] = (
-                                    tmp_cluster
-                                    if np_inputs_s[i_cluster] is None
-                                    else np.concatenate(
-                                        [np_inputs_s[i_cluster], tmp_cluster], axis=-1
-                                    )
-                                )
-                        for i_cluster in range(self.experiment.clusters["n"]):
-                            if self.experiment.model_kwargs["data"] == "normal":
-                                np_inputs_s[i_cluster] = (
-                                    np_inputs_s[i_cluster]
-                                    .astype(np.float32)
-                                    .reshape(-1, np_inputs_s[i_cluster].shape[-1])
-                                )
-                                df = pd.DataFrame(
-                                    np_inputs_s[i_cluster],
-                                    columns=self.experiment.features,
-                                )
-                            elif self.experiment.model_kwargs["data"] == "mean":
-                                # For each cluster, for each feature, mean of the feature over the stations
-                                np_inputs_s[i_cluster] = (
-                                    np_inputs_s[i_cluster]
-                                    .astype(np.float32)
-                                    .mean(axis=0, keepdims=True)
-                                )
-                                np_inputs_s[i_cluster] = np.repeat(
-                                    np_inputs_s[i_cluster],
-                                    len(self.experiment.clusters["groups"][i_cluster]),
-                                    axis=0,
-                                )
-                                df = pd.DataFrame(
-                                    np_inputs_s[i_cluster],
-                                    columns=self.experiment.features,
-                                )
-                            df.to_csv(
-                                os.path.join(
-                                    self.experiment.folders["scratch"]["folder"],
-                                    f"CASESTUDY_{i_cluster}_{strdate}_{lt}.csv",
-                                ),
-                                index=False,
-                            )
-                        for fold in range(self.experiment.model_kwargs["n_folds"]):
-                            for i_cluster in range(self.experiment.clusters["n"]):
-                                os.system(
-                                    f"Rscript {self.experiment.files['R']['predict']} --test-predictors {os.path.join(self.experiment.folders['scratch']['folder'], f'CASESTUDY_{i_cluster}_{strdate}_{lt}.csv')} --output {os.path.join(self.experiment.folders['scratch']['folder'], f'CASESTUDY_{i_cluster}_{fold}_{strdate}_{lt}_preds.csv')} --model-file {os.path.join(self.experiment.folders['plot']['model'], f'{i_cluster}_{lt}_{fold}.rds')} --source {self.experiment.files['R']['source']}"
-                                )
-            # Labels
-            labels = xr.open_dataset(l_file, engine="netcdf4")
-            labels = labels.sel(time=date)[self.experiment.label]
-            for i_cluster in range(self.experiment.clusters["n"]):
-                lab_tmp = labels.sel(
-                    station=self.experiment.clusters["groups"][i_cluster]
-                ).values
-                np_inputs_l[i_cluster] = (
-                    lab_tmp
-                    if np_inputs_l[i_cluster] is None
-                    else np.concatenate([np_inputs_l[i_cluster], lab_tmp], axis=0)
-                )
-            for i_cluster in range(self.experiment.clusters["n"]):
-                np_inputs_l[i_cluster] = (
-                    np_inputs_l[i_cluster].astype(np.float32).reshape(-1)
-                )
-
-            # Build gev_params and mus, sigmas, xis
-            mus = [
-                [
-                    pd.read_csv(
-                        os.path.join(
-                            self.experiment.folders["scratch"]["folder"],
-                            f"CASESTUDY_{icluster}_{fold}_{strdate}_{lead_time}_preds.csv",
-                        )
-                    ).values[:, 0]
-                    for icluster in range(self.experiment.clusters["n"])
-                ]
-                for fold in range(self.experiment.model_kwargs["n_folds"])
-            ]
-            sigmas = [
-                [
-                    pd.read_csv(
-                        os.path.join(
-                            self.experiment.folders["scratch"]["folder"],
-                            f"CASESTUDY_{icluster}_{fold}_{strdate}_{lead_time}_preds.csv",
-                        )
-                    ).values[:, 1]
-                    for icluster in range(self.experiment.clusters["n"])
-                ]
-                for fold in range(self.experiment.model_kwargs["n_folds"])
-            ]
-            xis = [
-                [
-                    pd.read_csv(
-                        os.path.join(
-                            self.experiment.folders["scratch"]["folder"],
-                            f"CASESTUDY_{icluster}_{fold}_{strdate}_{lead_time}_preds.csv",
-                        )
-                    ).values[:, 2]
-                    for icluster in range(self.experiment.clusters["n"])
-                ]
-                for fold in range(self.experiment.model_kwargs["n_folds"])
-            ]
-
-            gev_params = [
-                [
-                    pd.read_csv(
-                        os.path.join(
-                            self.experiment.folders["scratch"]["folder"],
-                            f"CASESTUDY_{icluster}_{fold}_{strdate}_{lead_time}_preds.csv",
-                        )
-                    ).values
-                    for icluster in range(self.experiment.clusters["n"])
-                ]
-                for fold in range(self.experiment.model_kwargs["n_folds"])
-            ]
-
-            # Compute CRPS for each cluster
-            crps_s = np.array(
-                [
-                    [
-                        gev_crps(
-                            mus[ifold][icluster],
-                            sigmas[ifold][icluster],
-                            xis[ifold][icluster],
-                            np_inputs_l[icluster],
-                        ).mean()
-                        for icluster in range(self.experiment.clusters["n"])
-                    ]
-                    for ifold in range(self.experiment.model_kwargs["n_folds"])
-                ]
-            )
-
-            if all_lts:
-                all_mus = [
-                    [
-                        [
-                            pd.read_csv(
-                                os.path.join(
-                                    self.experiment.folders["scratch"]["folder"],
-                                    f"CASESTUDY_{icluster}_{fold}_{strdate}_{lt}_preds.csv",
-                                )
-                            ).values[:, 0]
-                            for icluster in range(self.experiment.clusters["n"])
-                        ]
-                        for fold in range(self.experiment.model_kwargs["n_folds"])
-                    ]
-                    for lt in self.experiment.filter["lead_times"]
-                ]
-                all_sigmas = [
-                    [
-                        [
-                            pd.read_csv(
-                                os.path.join(
-                                    self.experiment.folders["scratch"]["folder"],
-                                    f"CASESTUDY_{icluster}_{fold}_{strdate}_{lt}_preds.csv",
-                                )
-                            ).values[:, 1]
-                            for icluster in range(self.experiment.clusters["n"])
-                        ]
-                        for fold in range(self.experiment.model_kwargs["n_folds"])
-                    ]
-                    for lt in self.experiment.filter["lead_times"]
-                ]
-                all_xis = [
-                    [
-                        [
-                            pd.read_csv(
-                                os.path.join(
-                                    self.experiment.folders["scratch"]["folder"],
-                                    f"CASESTUDY_{icluster}_{fold}_{strdate}_{lt}_preds.csv",
-                                )
-                            ).values[:, 2]
-                            for icluster in range(self.experiment.clusters["n"])
-                        ]
-                        for fold in range(self.experiment.model_kwargs["n_folds"])
-                    ]
-                    for lt in self.experiment.filter["lead_times"]
-                ]
-                all_crps_s = {
-                    lt: [
-                        [
-                            gev_crps(
-                                all_mus[ilt][ifold][icluster],
-                                all_sigmas[ilt][ifold][icluster],
-                                all_xis[ilt][ifold][icluster],
-                                np_inputs_l[icluster],
-                            ).mean()
-                            for icluster in range(self.experiment.clusters["n"])
-                        ]
-                        for ifold in range(self.experiment.model_kwargs["n_folds"])
-                    ]
-                    for ilt, lt in enumerate(self.experiment.filter["lead_times"])
-                }
-            storm_plot(
-                stations,
-                self.experiment.filter["storms"],
-                gev_params,
-                np_inputs_l,
-                temperature,
-                pressure,
-                wind,
-                self.experiment.clusters["groups"],
-                crps_s,
-                self.experiment.CRPS["mean"],
-                date,
-                os.path.join(
-                    self.experiment.folders["plot"]["folder"],
-                    f"Stormplot_{date}_{lead_time}.png",
-                ),
-                all_crps_s=all_crps_s,
-                cluster_nb=cluster_nb,
-            )
-            return all_crps_s
 
         def lt_crps(self, keep=False):
             """
             Plot the CRPS for each lead time.
+            
+            Parameters
+            ----------
+            keep : bool, optional
+                If True, keep the plot in the plotting directory.
             """
             with open(
                 os.path.join(self.experiment.folders["plot"]["folder"], "CRPS.pkl"),
@@ -2003,9 +1807,17 @@ class RExperiment:
             ) as f:
                 pickle.dump(crps, f)
 
-        def parameters(self): ...
-
         def cluster_crps(self, cluster, date):
+            """
+            Plot the CRPS for a specific cluster and date.
+            
+            Parameters
+            ----------
+            cluster : int
+                The cluster to consider.
+            date : datetime
+                The date to consider.
+            """
             strdate = date.strftime("%Y%m%d%H%M")
             # Labels
             labels = xr.open_dataset(
@@ -2089,9 +1901,20 @@ class RExperiment:
 
     class Saver:
         def __init__(self, experiment):
+            """
+            Class to save the results of the experiment.
+            
+            Parameters
+            ----------
+            experiment : Experiment
+                The experiment to save.
+            """
             self.experiment = experiment
 
         def information(self):
+            """
+            Save the information of the experiment in a file.
+            """
             with open(
                 os.path.join(
                     self.experiment.folders["plot"]["folder"], "Information.txt"
@@ -2104,6 +1927,9 @@ class RExperiment:
             pass
 
         def experiment_file(self):
+            """
+            Save the experiment in a file.
+            """
             experiment_dict = {
                 "files": self.experiment.files,
                 "folders": self.experiment.folders,

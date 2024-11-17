@@ -5,8 +5,34 @@ import os
 
 
 def create_labels(input_dir, years, output_dir):
+    """
+    Creates the files with the labels for the experiments to use.
+    The labels are the observed gusts at the stations.
+    
+    Parameters
+    ----------
+    input_dir : str
+        The directory where the data is stored.
+    years : list of str
+        The years for which the labels are created.
+    output_dir : str
+        The directory where the labels are saved.
+    """
 
     def get_stations(input_dir):
+        """
+        Collect the stations that have data for all months between April and October.
+        
+        Parameters
+        ----------
+        input_dir : str
+            The directory where the data is stored.
+            
+        Returns
+        -------
+        stations : np.array
+            The list of stations that have data for all months between April and October.
+        """
         # Load the data
         stations = None
         for file in os.listdir(input_dir):
@@ -24,6 +50,21 @@ def create_labels(input_dir, years, output_dir):
     stats = get_stations(input_dir)
 
     def get_dates(input_dir, stations):
+        """
+        Collect the dates that have data for all stations.
+        
+        Parameters
+        ----------
+        input_dir : str
+            The directory where the data is stored.
+        stations : np.array
+            The list of stations that have data for all months between April and October.
+        
+        Returns
+        -------
+        dates : np.array
+            The list of dates that have data for all stations.
+        """
         # Load the data
         dates = None
         for file in os.listdir(input_dir):
@@ -76,6 +117,13 @@ def intersect_dates(nn_preinput_dir, yearInt=None):
     The ncdf files for labels and input may have different dates.
     This function will intersect the dates of the input and labels files.
     year is an optional argument if you want to intersect only one year.
+    
+    Parameters
+    ----------
+    nn_preinput_dir : str
+        The directory where the data is stored.
+    yearInt : int
+        The year for which the dates are intersected.
     """
     files = os.listdir(nn_preinput_dir)
     files.sort()
@@ -114,6 +162,19 @@ def intersect_dates(nn_preinput_dir, yearInt=None):
 
 
 def create_input(input_dir, years, output_dir):
+    """
+    Creates the input files for the experiments to use.
+    The input files are the meteorological data at the stations.
+    
+    Parameters
+    ----------
+    input_dir : str
+        The directory where the data is stored.
+    years : list of str
+        The years for which the input is created.
+    output_dir : str
+        The directory where the input is saved.
+    """
     files = os.listdir(input_dir)
     for file in files:
         print(file)
@@ -126,6 +187,20 @@ def create_input(input_dir, years, output_dir):
 
 
 def create_baseline_input(input_dir, years, output_dir):
+    """
+    Creates the baseline input files for the experiments to use.
+    The baseline input files are the ERA5 data at the stations, used
+    as if they had been predicted by Pangu.
+    
+    Parameters
+    ----------
+    input_dir : str
+        The directory where the data is stored.
+    years : list of str
+        The years for which the input is created.
+    output_dir : str
+        The directory where the input is saved.
+    """
     files = os.listdir(input_dir)
     for file in files:
         print(file)
@@ -143,6 +218,19 @@ def create_baseline_input(input_dir, years, output_dir):
 
 
 def complete_cases(data):
+    """
+    Get rid of incomplete cases.
+    
+    Parameters
+    ----------
+    data : xr.Dataset
+        The dataset to clean.
+    
+    Returns
+    -------
+    data : xr.Dataset
+        The cleaned dataset.
+    """
     # Get rid of incomplete cases
     data = data.dropna(
         dim="time",
@@ -164,6 +252,19 @@ def adapt_input(
     """
     Uses the input created for the Neural Network to prepare the input for R.
     In practice, interpolates the data on the coordinates of the stations.
+    
+    Parameters
+    ----------
+    input_dir : str
+        The directory where the data is stored.
+    output_dir : str
+        The directory where the data is saved.
+    years : list of str
+        The years for which the input is created.
+    input_suffix : str
+        The suffix of the input files.
+    output_suffix : str
+        The suffix of the output files.
     """
     for file in os.listdir(input_dir):
         if not file.endswith(input_suffix) or (
@@ -193,6 +294,13 @@ def adapt_input(
 def gust_factor(wind, gust):
     """
     Computes the gust factor from the wind and gust speeds.
+    
+    Parameters
+    ----------
+    wind : xr.DataArray
+        The wind speed.
+    gust : xr.DataArray
+        The gust speed.
     """
     return (gust / wind).mean()
 
@@ -206,7 +314,23 @@ def era5_baseline(
     output_suffix="ERA5.nc",
 ):
     """
-    years should be a list of int
+    Creates the baseline input files for the experiments to use,
+    using the ERA5 wind gust as observation.
+    
+    Parameters
+    ----------
+    input_dir : str
+        The directory where the data is stored.
+    input_interpolation_dir : str
+        The directory where the interpolated data is stored.
+    output_dir : str
+        The directory where the data is saved.
+    years : list of str
+        The years for which the input is created.
+    input_suffix : str
+        The suffix of the input files.
+    output_suffix : str
+        The suffix of the output files.
     """
     for year in years:
         for file in os.listdir(input_dir):
@@ -258,6 +382,19 @@ def add_persistant_vars(
 ):
     """
     Adds the gust at time - lead_time to the input data.
+    
+    Parameters
+    ----------
+    input_dir : str
+        The directory where the data is stored.
+    output_dir : str
+        The directory where the data is saved.
+    years : list of str
+        The years for which the input is created.
+    input_file_suffix : str
+        The suffix of the input files.
+    input_label_suffix : str
+        The suffix of the label files.
     """
     files = os.listdir(input_dir)
     files.sort()

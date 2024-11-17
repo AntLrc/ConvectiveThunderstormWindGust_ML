@@ -16,7 +16,22 @@ def plot_stations(
     stations, switzerland_file, save_path, distance=0.0, date=None, station_with_storm=None
 ):
     """
-    stations: geoDataFrame with the stations to plot.
+    Plot the stations on a map of Switzerland.
+    
+    Parameters
+    ----------
+    stations : gpd.GeoDataFrame
+        The stations to plot.
+    switzerland_file : str
+        The path to the shapefile of Switzerland.
+    save_path : str
+        The path where to save the plot.
+    distance : float, optional
+        The distance around each station to plot a circle. The default is 0.0.
+    date : str, optional
+        The date of the storm to plot. The default is None.
+    station_with_storm : dict, optional
+        The stations that detected a storm on a given date. The default is None.
     """
     fig, ax = plt.subplots()
 
@@ -64,10 +79,19 @@ class Storm:
 
     def __init__(self, data, storm_id, stations, **kwargs):
         """
-        data: pandas.DataFrame, made from csv dataset from Monika's article from which to extract information about the storms.
-        data should have ID as index.
-        id: str, id of the storm in the dataset.
-        stations: array like with three columns: name, chx, chy.
+        Create a storm object, which contains the track of the storm and the stations that detected it.
+        
+        Parameters
+        ----------
+        data : pandas.DataFrame
+            The data from which to extract the storm's track, made from Monika's article.
+            data should have ID as index.
+        storm_id : str
+            The ID of the storm.
+        stations : array like with three columns: name, chx, chy
+            The stations that detected the storm.
+        **kwargs : dict
+            Additional arguments.
         """
         if not isinstance(data, pd.DataFrame):
             raise TypeError("data must be a pandas.DataFrame")
@@ -94,7 +118,13 @@ class Storm:
     def define_stations(self, stations, distance=25000, **kwargs):
         """
         Define the stations that are in the storm's track.
-        stations: gpd.GeoDataFrame with the names of the stations as index. Coordinates should
+        
+        Parameters
+        ----------
+        stations : gpd.GeoDataFrame
+            The stations to consider. The names of the stations should be the index.
+        distance : float, optional
+            The distance around each point to consider a station. The default is 25000.
         """
         if not isinstance(stations, gpd.GeoDataFrame):
             raise TypeError("stations must be a gpd.GeoDataFrame")
@@ -127,9 +157,19 @@ class Storm:
 class Storms:
     def __init__(self, data, stations, keep_empty=False, **kwargs):
         """
-        data: pandas.DataFrame, made from csv dataset from Monika's article from which to extract information about the storms.
-        data should have ID as index.
-        stations: array like with three columns: name, chx, chy.
+        Create a storms object, which contains all the storms and the stations that detected them.
+        
+        Parameters
+        ----------
+        data : pandas.DataFrame
+            The data from which to extract the storms, made from Monika's article.
+            data should have ID as index.
+        stations : array like with three columns: name, chx, chy
+            The stations that detected the storms.
+        keep_empty : bool, optional
+            Whether to keep the storms with an empty track. The default is False.
+        **kwargs : dict
+            Additional arguments.
         """
         if not isinstance(data, pd.DataFrame):
             raise TypeError("data must be a pandas.DataFrame")
