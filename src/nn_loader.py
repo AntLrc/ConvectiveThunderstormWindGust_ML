@@ -19,7 +19,7 @@ import os
 from nn_block import *
 from nn_train import train_loop, create_train_state, create_batches, loss_and_crps, mae
 from nn_losses import gev_crps_loss, gev_crps, return_level, return_level_loss
-from utils import pit_histogram, storm_plot, metrics_evolution, param_distribution
+from utils import storm_plot, metrics_evolution, load_as_nested_dict, save_nested_dict
 
 
 class Experiment:
@@ -31,10 +31,17 @@ class Experiment:
         Parameters
         ----------
         experiment_file : str
-            Path to the experiment file.
+            Path to the experiment file. Either a .txt file or a .pkl file.
+            If a .txt file, will try to recover crps and data values from
+            a pkl file in experiment plot folder.
         """
-        with open(experiment_file, "rb") as f:
-            experiment = pickle.load(f)
+        if not (experiment_file.endswith('.pkl') or experiment_file.endswith('.txt')):
+            raise ValueError(f"Unexpected file type: {line.strip('.')[-1]}")
+        if experiment_file.endswith('.pkl'):
+            with open(experiment_file, "rb") as f:
+                experiment = pickle.load(f)
+        else:
+            experiment = load_as_nested_dict(experiment_file)
         self.expnumber = experiment_file.split("_")[-1].split(".")[0]
         self.files = experiment["files"]
         default_files = {
@@ -173,7 +180,7 @@ class Experiment:
         self.plot = self.Plotter(self)
         self.save = self.Saver(self)
         self.diag = self.Diagnostics(self)
-
+            
     def load_mean_std(self):
         """
         Preparation to feature normalisation through review of training set.
@@ -193,7 +200,8 @@ class Experiment:
             )
             loc_dates = pd.DatetimeIndex(inputs.time)
             if self.filter["storm_part"]["train"] is not None:
-                rng, ratio = self.filter["storm_part"]["train"]
+                rngseed, ratio = self.filter["storm_part"]["train"]
+                rng = jax.random.key(rngseed)
                 input_dates = pd.DatetimeIndex(inputs.time)
                 storm_dates = input_dates.intersection(self.filter["dates"])
                 nostorm_dates = input_dates.difference(self.filter["dates"])
@@ -271,7 +279,8 @@ class Experiment:
             )
             loc_dates = pd.DatetimeIndex(inputs.time)
             if self.filter["storm_part"]["train"] is not None:
-                rng, ratio = self.filter["storm_part"]["train"]
+                rngseed, ratio = self.filter["storm_part"]["train"]
+                rng = jax.random.key(rngseed)
                 input_dates = pd.DatetimeIndex(inputs.time)
                 storm_dates = input_dates.intersection(self.filter["dates"])
                 nostorm_dates = input_dates.difference(self.filter["dates"])
@@ -404,7 +413,8 @@ class Experiment:
             )
             loc_dates = pd.DatetimeIndex(inputs.time)
             if self.filter["storm_part"]["test"] is not None:
-                rng, ratio = self.filter["storm_part"]["test"]
+                rngseed, ratio = self.filter["storm_part"]["test"]
+                rng = jax.random.key(rngseed)
                 input_dates = pd.DatetimeIndex(inputs.time)
                 storm_dates = input_dates.intersection(self.filter["dates"])
                 nostorm_dates = input_dates.difference(self.filter["dates"])
@@ -657,7 +667,7 @@ class Experiment:
                 )
                 model_state = create_train_state(
                     self.nn,
-                    self.model_kwargs["rng"]["init"],
+                    jax.random.key(self.model_kwargs["rng"]["init"]),
                     self.model_kwargs["learning_rate"],
                     self.model_kwargs["batch_size"],
                     len(self.features),
@@ -729,7 +739,7 @@ class Experiment:
                         self.model_kwargs["epochs"],
                         len(self.clusters["stations"]),
                         self.clusters["n"],
-                        self.model_kwargs["rng"]["shuffle"],
+                        jax.random.key(self.model_kwargs["rng"]["shuffle"]),
                         regularisation=self.model_kwargs["regularisation"],
                         alpha=self.model_kwargs["alpha"],
                         n_best_states=self.model_kwargs["n_best_states"],
@@ -760,7 +770,7 @@ class Experiment:
                     val_t,
                     val_l,
                     self.model_kwargs["batch_size"],
-                    self.model_kwargs["rng"]["shuffle"],
+                    jax.random.key(self.model_kwargs["rng"]["shuffle"]),
                 ):
                     tmp_crps, _ = metrics_fn(
                         output_state,
@@ -1047,9 +1057,16 @@ class Experiment:
                 "CRPS": self.experiment.CRPS,
                 "Data": self.experiment.Data,
             }
-            with open(self.experiment.files["experiment"], "wb") as f:
-                pickle.dump(experiment_dict, f)
-
+            filetype = self.experiment.files["experiment"].split('.')[-1]
+            if filetype == 'pkl':
+                with open(self.experiment.files["experiment"], "wb") as f:
+                    pickle.dump(experiment_dict, f)
+            elif filetype == 'txt':
+                save_nested_dict(self.experiment.files["experiment"], experiment_dict)
+                data_and_crps = {k:experiment_dict[k] for k in ['data', 'crps']}
+                with open(self.experiment.folders['plot']['folder'] + 'data_and_crps.pkl', 'wb') as f:
+                    pickle.dump(data_and_crps, f)
+                
     # Subclass for plotting
     class Plotter:
         def __init__(self, experiment):
@@ -1146,7 +1163,7 @@ class Experiment:
                         tb,
                         lb,
                         self.experiment.model_kwargs["batch_size"],
-                        self.experiment.model_kwargs["rng"]["shuffle"],
+                        jax.random.key(self.experiment.model_kwargs["rng"]["shuffle"]),
                     ):
                         gevparams = self.experiment.NN.apply(params, x_s, x_t)
                         if self.experiment.model_kwargs["target"] == "GEV":
@@ -1325,7 +1342,7 @@ class Experiment:
                         tb,
                         lb,
                         self.experiment.model_kwargs["batch_size"],
-                        self.experiment.model_kwargs["rng"]["shuffle"],
+                        jax.random.key(self.experiment.model_kwargs["rng"]["shuffle"]),
                     ):
                         tmpparams = self.experiment.NN.apply(params, x_s, x_t)
                         gevparams = (

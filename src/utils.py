@@ -524,3 +524,93 @@ def metrics_evolution(
     plt.savefig(save_path)
     plt.close()
 
+def parse_nested_structure(lines, level=0, current_key=None):
+    """Parses indented text lines into a nested dictionary."""
+    result = {}
+    
+    while lines:
+        line = lines.pop(0)
+        stripped = line.strip()
+        
+        if not stripped or stripped.startswith("#"): 
+            # Skip empty lines or comments
+            continue
+        
+        indent_level = len(line) - len(stripped)
+        
+        if indent_level < level:
+            # This line belongs to a higher level of nesting
+            lines.insert(0, line)
+            break
+        
+        if stripped.endswith(":"):
+            key = stripped[:-1]
+            result[key] = parse_nested_structure(lines,
+                                                 level=indent_level + 1,
+                                                 current_key=key)
+        else:
+            if current_key:
+                if isinstance(result, dict) and not result:
+                    # check if the dict is empty, meaning it is a leaf
+                    result = parse_line(stripped)
+                elif not isinstance(result, list):
+                    result = [result, parse_line(stripped)]
+                elif isinstance(result, list):
+                    result = result + [parse_line(stripped)]
+                else:
+                    raise ValueError(f"Unexpected line with context: {line}")
+            else:
+                raise ValueError(f"Unexpected line without context: {line}")
+    
+    return result
+
+# Load and parse the file
+def load_as_nested_dict(filepath):
+    """Reads a structured file and parses it into a nested dictionary."""
+    with open(filepath, 'r') as file:
+        lines = file.readlines()
+    return parse_nested_structure(lines)
+
+def parse_line(line):
+    try:
+        # Try to convert to an integer
+        return int(line)
+    except ValueError:
+        try:
+            # Try to convert to a float
+            return float(line)
+        except ValueError:
+            # If all else fails, return as a string
+            return line.strip()
+
+def write_nested_dict(data, file, level=0):
+    """
+    Writes a nested dictionary to a file with proper indentation.
+    
+    Args:
+        data (dict): The nested dictionary to write.
+        file (file object): Open file object for writing.
+        level (int): The current indentation level.
+    """
+    indent = ' ' * (level * 4)  # Use 4 spaces per indentation level
+    
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if isinstance(value, (dict, list)):
+                file.write(f"{indent}{key}:\n")
+                write_nested_dict(value, file, level + 1)
+            else:
+                file.write(f"{indent}{key}:\n{indent}    {value}\n")
+    elif isinstance(data, list):
+        for item in data:
+            if isinstance(item, (dict, list)):
+                write_nested_dict(item, file, level)
+            else:
+                file.write(f"{indent}{item}\n")
+    else:
+        file.write(f"{indent}{data}\n")
+
+def save_nested_dict(filepath, data):
+    """Saves a nested dictionary to a structured text file."""
+    with open(filepath, 'w') as file:
+        write_nested_dict(data, file)
