@@ -596,18 +596,27 @@ def write_nested_dict(data, file, level=0):
     
     if isinstance(data, dict):
         for key, value in data.items():
-            if isinstance(value, (dict, list)):
+            if isinstance(value, (dict, list, tuple, np.ndarray)):
                 file.write(f"{indent}{key}:\n")
                 write_nested_dict(value, file, level + 1)
             else:
+                if isinstance(value, jax._src.prng.PRNGKeyArray):
+                    # temporary modification to find seed and save it
+                    value = str(value).strip().split(' ')[-1].split(']')[0]
                 file.write(f"{indent}{key}:\n{indent}    {value}\n")
-    elif isinstance(data, list):
+    elif isinstance(data, (list, tuple, np.ndarray)):
         for item in data:
             if isinstance(item, (dict, list)):
                 write_nested_dict(item, file, level)
             else:
+                if isinstance(item, jax._src.prng.PRNGKeyArray):
+                    # temporary modification to find seed and save it
+                    item = str(item).strip().split(' ')[-1].split(']')[0]
                 file.write(f"{indent}{item}\n")
     else:
+        if isinstance(data, jax._src.prng.PRNGKeyArray):
+            # temporary modification to find seed and save it
+            data = str(data).strip().split(' ')[-1].split(']')[0]
         file.write(f"{indent}{data}\n")
 
 def save_nested_dict(filepath, data):

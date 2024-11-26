@@ -164,18 +164,23 @@ class Experiment:
             )
             for i in range(self.clusters["n"])
         ]
+        os.makedirs(self.folders["scratch"]["folder"], exist_ok=True)
+        os.makedirs(self.folders["plot"]["folder"], exist_ok=True)
         self.crps = experiment.get("CRPS", {})
+        self.data = experiment.get("Data", {})
+        if os.path.exists(os.path.join(self.folders["plot"]["folder"],
+                                       'data_and_crps')):
+            with open(os.path.join(self.folders["plot"]["folder"], 'data_and_crps'),
+                      'wb') as f:
+                data_and_crps = pickle.load(f)
         default_crps = {"mean": None, "std": None, "values": None}
         for k, v in default_crps.items():
             if not k in self.crps.keys():
                 self.crps[k] = v
-        self.data = experiment.get("Data", {})
         default_data = {"mean": None, "std": None, "ndates": None}
         for k, v in default_data.items():
             if not k in self.data.keys():
                 self.data[k] = v
-        os.makedirs(self.folders["scratch"]["folder"], exist_ok=True)
-        os.makedirs(self.folders["plot"]["folder"], exist_ok=True)
         self.nn = self.nn_()
         self.plot = self.Plotter(self)
         self.save = self.Saver(self)
@@ -1054,18 +1059,22 @@ class Experiment:
                     k: self.experiment.filter[k]
                     for k in ["lead_times", "storm_part", "2d"]
                 },
-                "CRPS": self.experiment.CRPS,
-                "Data": self.experiment.Data,
+                "crps": self.experiment.crps,
+                "data": self.experiment.data,
             }
             filetype = self.experiment.files["experiment"].split('.')[-1]
             if filetype == 'pkl':
                 with open(self.experiment.files["experiment"], "wb") as f:
                     pickle.dump(experiment_dict, f)
             elif filetype == 'txt':
-                save_nested_dict(self.experiment.files["experiment"], experiment_dict)
                 data_and_crps = {k:experiment_dict[k] for k in ['data', 'crps']}
-                with open(self.experiment.folders['plot']['folder'] + 'data_and_crps.pkl', 'wb') as f:
+                with open(os.path.join(self.experiment.folders['plot']['folder'],
+                                       'data_and_crps.pkl'),
+                          'wb') as f:
                     pickle.dump(data_and_crps, f)
+                experiment_dict.pop('data')
+                experiment_dict.pop('crps')
+                save_nested_dict(self.experiment.files["experiment"], experiment_dict)
                 
     # Subclass for plotting
     class Plotter:
