@@ -580,8 +580,14 @@ def parse_line(line):
             # Try to convert to a float
             return float(line)
         except ValueError:
-            # If all else fails, return as a string
-            return line.strip()
+            if line == 'None':
+                return None
+            elif line == 'True':
+                return True
+            elif line == 'False':
+                return False
+            else:
+                return line.strip()
 
 def write_nested_dict(data, file, level=0):
     """

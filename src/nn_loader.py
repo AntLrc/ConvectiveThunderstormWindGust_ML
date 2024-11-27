@@ -1797,3 +1797,100 @@ class Experiment:
         print(f"Experiment file saved at {save_path}")
 
         return
+    
+    @staticmethod
+    def create_experiment_template(file_path):
+        """
+        Create an experiment file template.
+        
+        Parameters
+        ----------
+        file_path : str
+            The path to save the template.
+        """
+        exp_template = {}
+        exp_template['files'] = {
+            "train": {"inputs": ['# .nc train file with inputs n°1',
+                                 '# .nc train file with inputs n°2',
+                                 '# .nc train file with inputs n°3 etc...',
+                                 ],
+                      "labels": ['# .nc train label file n°1',
+                                 '# .nc train label file n°2',
+                                 '# .nc train label file n°3 etc...',
+                                 ],},
+            "test": {"inputs": ['# .nc test file with inputs n°1',
+                                '# .nc test file with inputs n°2',
+                                '# .nc test file with inputs n°3 etc...',
+                                ],
+                      "labels": ['# .nc test label file n°1',
+                                 '# .nc test label file n°2',
+                                 '# .nc test label file n°3 etc...',
+                                 ],},
+            "storms": '# .pkl file with storm data, obtained with storm.py',
+            "clusters": '# .pkl file with cluster data, obtained with clustering.py',
+            "experiment": '# auto reference, .txt file.',
+        }
+        exp_template['folders'] = {
+            "scratch": {"folder": '# folder to save temporary experiment files',
+                        "dir": '# dir containing the different experiment folders',},
+            "plot": {"folder": '# folder to save plots',
+                     "dir": '# dir containing the different experiment plot folders',},
+        }
+        exp_template['features'] = [
+            '# name of feature 1 from .nc  file',
+            '# name of feature 2 from .nc  file',
+            '# name of feature 3 etc...',
+        ]
+        exp_template['label'] = '# name of label from .nc file'
+        exp_template['nn_kwargs'] = {
+            'spatial':{
+                'name':
+                    '# Name of NN used for spatial part',
+                'kwargs':
+                    '# kwargs of NN, using with same convention. Ex: kernel_size, strides...'
+            },
+            'temporal':{
+                'name':
+                    '# Name of NN used for spatial part',
+                'kwargs':
+                    '# kwargs of NN, using with same convention. Ex: kernel_size, strides...'
+            },
+            'distributional':{
+                'name':
+                    '# Name of NN used for spatial part',
+                'kwargs':
+                    '# kwargs of NN, using with same convention. Ex: kernel_size, strides...'
+            }
+        }
+        exp_template['model_kwargs'] = {
+            "batch_size": '# int',
+            "rng": {"init": '# int, seed of PRNG', "shuffle": '# int, seed of PRNG'},
+            "epochs": '# int, number of epochs',
+            "learning_rate": '# float',
+            "regularisation": '# Either l1, l2 or None',
+            "alpha": '# float, coefficient used for eventual regularisation.',
+            "n_best_states": '# int, number of best states to keep from training',
+            "target": "# either GEV or Deterministic",
+            "time_encoding": "# sinusoidal, nothing else was implemented yet",
+            "n_folds": '# int, should be equal to the number of traing files',
+            "early_stopping": '# how many epochs without improvement before stopping',
+        }
+        exp_template['filter'] = {
+            "lead_times": [
+                '# int, lead time 1',
+                '# int, lead time 2',
+                '# int, lead time 3 etc...',
+            ],
+            "storm_part": {"train":[
+                                '# The two following lines can be replaced by a single None line',
+                                '# int, seed of PRNG for train storm part',
+                                '# float, percentage of storm to keep in training set',
+                ],
+                           "test": [
+                                '# The two following lines can be replaced by a single None line',
+                               '# int, seed of PRNG for test storm part',
+                               '# float, percentage of storm to keep in test set',
+                           ],},
+            "2d": '# bool, True if input are grided values, False if input is station-wise data',
+        }
+        save_nested_dict(file_path, exp_template)
