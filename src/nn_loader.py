@@ -58,6 +58,14 @@ class Experiment:
                 for subk, subv in v.items():
                     if not subk in self.files[k].keys():
                         self.files[k][subk] = subv
+        if not isinstance(self.files["train"]["inputs"], list):
+            self.files["train"]["inputs"] = [self.files["train"]["inputs"]]
+        if not isinstance(self.files["test"]["inputs"], list):
+            self.files["test"]["inputs"] = [self.files["test"]["inputs"]]
+        if not isinstance(self.files["train"]["labels"], list):
+            self.files["train"]["labels"] = [self.files["train"]["labels"]]
+        if not isinstance(self.files["test"]["labels"], list):
+            self.files["test"]["labels"] = [self.files["test"]["labels"]]
         self.folders = experiment["folders"]
         default_folders = {
             "scratch": {"folder": None, "dir": None},
@@ -823,7 +831,6 @@ class Experiment:
             self.crps["values"] = np.array(metrics)
         self.save.information()
         self.save.experimentfile()
-        self.save.summary()
         # Plot results
         self.plot.losses(losses)
 
@@ -950,6 +957,17 @@ class Experiment:
             ----------
             save : bool
                 If True, saves the computed CRPS in the plot folder.
+            
+            Returns
+            -------
+            s : np.ndarray
+                Spatial inputs. Shape of (batch_size, n_features).
+            t : np.ndarray
+                Temporal inputs. Shape of (batch_size, n_features).
+            l : tuple
+                Labels. Tuple of arrays of shape (batch_size, n_clusters).
+            crps : np.ndarray
+                CRPS values. Shape of (n_folds, n_clusters, batch_size).
             """
             with open(
                 os.path.join(

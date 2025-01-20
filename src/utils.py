@@ -629,3 +629,63 @@ def save_nested_dict(filepath, data):
     """Saves a nested dictionary to a structured text file."""
     with open(filepath, 'w') as file:
         write_nested_dict(data, file)
+
+def create_crps_from_fcst_ref_dates(long_crps, t_array,
+                                year, lead_times, fcst_ref_dates):
+    """
+    Create the CRPS array from the long CRPS array.
+    
+    Parameters
+    ----------
+    long_crps: np.array
+        Array of CRPS of shape (n_fold, n_cluster, n_dates), as output by the model.
+    t_array: np.array
+        Array of shape (n_dates, 4) with the time array.
+    year: int
+        Year of the forecast.
+    lead_times: np.ndarray
+        Array of lead times.
+    fcst_ref_dates: list
+        List of forecast reference dates.
+        
+    Returns
+    -------
+    crps: np.array
+        Array of CRPS of shape (n_cluster, n_lead_times, n_fold), as output by the model.
+    """
+    lead_times_6h = [i for i in lead_times if i%6 == 0]
+    # Inverting the time array to get the dates
+    days = t_array[:, 0] * 107 + 242
+    hour = (
+        np.angle([complex(t_array[i, 1], t_array[i, 2]) for i in range(len(t_array))])
+        * 12
+        / np.pi
+    )
+    hour += 24 * (hour < 0)
+    dates = pd.DatetimeIndex(
+        [
+            pd.Timestamp(f"{year}-01-01")
+            + pd.Timedelta(days=round(days[i]) - 1, hours=round(hour[i]))
+            for i in range(len(t_array))
+        ]
+    ).unique()
+    crps = np.full((long_crps.shape[1],
+                     len(lead_times_6h),
+                     long_crps.shape[0],
+                     len(fcst_ref_dates)),
+                   np.nan)
+    # crps is of shape (n_clusters, n_lead_times, n_fold, n_dates)
+    for i_cluster in range(crps.shape[0]):
+        for i_lead_time, lead_time in enumerate(lead_times_6h):
+            for i_fold in range(crps.shape[2]):
+                for i_ref_date, ref_date in enumerate(fcst_ref_dates):
+                    date = ref_date + pd.Timedelta(lead_time, unit = 'h')
+                    if date in dates:
+                        i_date = np.where(dates == date)[0][0] +\
+                            np.where(lead_times == lead_time)[0][0]*\
+                                (len(t_array)//len(lead_times))
+                        crps[i_cluster, i_lead_time, i_fold, i_ref_date] =\
+                            long_crps[i_fold, i_cluster, i_date]
+    #crps = np.transpose(np.nanmean(crps, axis = 3), (2,0,1))
+    return crps
+                        

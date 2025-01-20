@@ -210,3 +210,106 @@ def pointwise_baseline(obs_da, fcst_da, t_array, year, clusters):
         res_obs.append(np_obs[:, cluster])
         res_fcst.append(np_fcst[:, cluster])
     return res_obs, res_fcst
+
+def icon_crps(icon_ds, obs_da, t_array, year, clusters, lead_times):
+    """
+    From the ICON forecast, create a crps array with the same format as the
+    predictions from post-processing methods.
+    
+    Parameters
+    ----------
+    icon_ds: xr.Dataset
+        Dataset containing the ICON forecast.
+    obs_da: xr.DataArray
+        Observations at each station.
+    t_array: np.array
+        Time array output from Experiment or RExperiment.
+    year: int
+        Year of the forecast.
+    clusters: list of list
+        List of list of stations.
+    lead_times: list
+        List of lead times.
+    
+    Returns
+    -------
+    crps: np.array
+        CRPS of the forecast. Shape (n_realisations, n_clusters, n_lead_times).
+    """
+    lead_times_6h = [i for i in lead_times if i%6 == 0]
+    stations = obs_da.station.values
+    icon_da = icon_ds.sel(station = stations,
+                          lead_time = pd.to_timedelta(lead_times_6h, unit = 'h')).wind_speed_of_gust
+    i_clusters = [
+        [np.argwhere(stations == s)[0][0] for s in cluster] for cluster in clusters
+    ]
+    # Inverting the time array to get the dates
+    days = t_array[:, 0] * 107 + 242
+    hour = (
+        np.angle([complex(t_array[i, 1], t_array[i, 2]) for i in range(len(t_array))])
+        * 12
+        / np.pi
+    )
+    hour += 24 * (hour < 0)
+    dates = pd.DatetimeIndex(
+        [
+            pd.Timestamp(f"{year}-01-01")
+            + pd.Timedelta(days=round(days[i]) - 1, hours=round(hour[i]))
+            for i in range(len(t_array))
+        ]
+    ).unique()
+    # Create a new xr.DataArray with coordinates forecast_reference_time and lead_time,
+    # its values being the observations. Lead time should be a new coordinate based on lead_times.
+    # forecast_reference_time should be equal to time minus lead_time.
+    obs_values = np.full((len(icon_ds.forecast_reference_time.values),
+                          len(lead_times_6h),
+                          len(stations)),
+                         np.nan)
+    for i_lt, lead_time in enumerate(lead_times_6h):
+        for i_rd, ref_date in enumerate(icon_ds.forecast_reference_time.values):
+            date = ref_date + pd.to_timedelta(lead_time, unit = 'h')
+            if date in obs_da.time.values:
+                obs_values[i_rd, i_lt, :] = obs_da.sel(
+                    time = date).values # problem here, no lt take to find date from large array!
+    new_obs_da = xr.DataArray(obs_values,
+                          coords = {'forecast_reference_time': icon_ds.forecast_reference_time,
+                                    'lead_time': pd.to_timedelta(lead_times_6h, unit = 'h'),
+                                    'station': stations},
+                          dims = ['forecast_reference_time', 'lead_time', 'station'])
+    np_fcst = icon_da.values
+    np_obs = new_obs_da.values
+    mask_obs = np.logical_not(np.any(np.isnan(np_obs), axis = (1,2)))
+    mask_fcst = np.logical_not(np.any(np.isnan(np_fcst), axis = (1,2,3)))
+    mask = np.logical_and(mask_obs, mask_fcst)
+    np_fcst = np_fcst[mask]
+    np_obs = np_obs[mask]
+    res_fcst = []
+    res_obs = []
+    for cluster in i_clusters:
+        res_fcst.append(np_fcst[:, :, cluster])
+        res_obs.append(np_obs[:, :, cluster])
+    # res_fcst is a list of array of shape (ref_dates, lead_times, stations, realisation)
+    crps = np.zeros((len(clusters), len(lead_times_6h), res_fcst[0].shape[-1]))
+    
+    for i_cluster in range(len(res_fcst)):
+        for i_real in range(res_fcst[i_cluster].shape[-1]):
+            obs = res_obs[i_cluster]
+            obs = obs.reshape(-1, obs.shape[-1])
+            fcst = res_fcst[i_cluster][:, :, :, i_real]
+            fcst = fcst.reshape(-1, fcst.shape[-1])
+            tmp_crps = compute_ecdf_crps(obs, fcst)
+            # shape of tmp_crps: dates*lead_times
+            tmp_crps = tmp_crps.reshape(-1, len(lead_times_6h))
+            tmp_crps = np.nanmean(tmp_crps, axis = 0)
+            crps[i_cluster, :, i_real] = tmp_crps
+    #crps is of shape (n_clusters, n_lead_times, n_realisations)
+    crps = np.transpose(crps, (2, 0, 1))
+    # crps is of shape (n_realisations, n_clusters, n_lead_times)
+    return crps
+
+    # xr.DataArray(crps,
+    #              coords = {'realisation': np.arange(crps.shape[0]),
+    #                         'cluster': np.arange(crps.shape[1]),
+    #                         'lead_time': lead_times_6h},
+    #               dims = ['realisation', 'cluster', 'lead_time'],
+    #               name = 'crps')
