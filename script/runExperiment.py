@@ -6,7 +6,7 @@ def main():
     src_path = os.path.join(dev_path, "..", 'src')
     sys.path.append(src_path)
     
-    from cnn_loader import Experiment
+    from nn_loader import Experiment
     import argparse
     
     parser = argparse.ArgumentParser(description='Run an experiment created during an interactive session.')

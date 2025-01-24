@@ -28,7 +28,7 @@
 module purge
 
 conda deactivate
-conda activate AlpthNN
+conda activate AlpthShape
 
 nvidia-smi
 
