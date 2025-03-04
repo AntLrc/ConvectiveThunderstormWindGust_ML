@@ -43,7 +43,7 @@ def plot_stations(
         geom = geom.to_crs(switzerland.crs)
 
     switzerland.plot(ax=ax)
-    geom.plot(ax=ax, color="green")
+    geom.plot(ax=ax, color="red")
 
     # Add a circle around each point from geom, the radius of which is distance.
     for point in geom:
@@ -72,7 +72,7 @@ def plot_stations(
     plt.xlabel("CH1903+ x (m)")
     plt.ylabel("CH1903+ y (m)")
 
-    plt.savefig(save_path)
+    plt.savefig(save_path, bbox_inches="tight")
 
 
 class Storm:

@@ -18,8 +18,8 @@ import os
 
 from nn_block import *
 from nn_train import train_loop, create_train_state, create_batches, loss_and_crps, mae
-from nn_losses import gev_crps_loss, gev_crps, return_level, return_level_loss
-from utils import storm_plot, metrics_evolution, load_as_nested_dict, save_nested_dict
+from nn_losses import gev_crps_loss, gev_crps
+from utils import metrics_evolution, load_as_nested_dict, save_nested_dict
 
 
 class Experiment:
@@ -36,7 +36,7 @@ class Experiment:
             a pkl file in experiment plot folder.
         """
         if not (experiment_file.endswith('.pkl') or experiment_file.endswith('.txt')):
-            raise ValueError(f"Unexpected file type: {line.strip('.')[-1]}")
+            raise ValueError(f"Unexpected file type: {experiment_file.strip('.')[-1]}")
         if experiment_file.endswith('.pkl'):
             with open(experiment_file, "rb") as f:
                 experiment = pickle.load(f)
@@ -1002,7 +1002,7 @@ class Experiment:
                     )
                     if len(sb) == 0:
                         continue
-                    gevparams = self.experiment.NN.apply(params, sb, tb)
+                    gevparams = self.experiment.nn.apply(params, sb, tb)
                     mus, sigmas, xis = jnp.split(gevparams, 3, axis=1)
                     for icluster in range(self.experiment.clusters["n"]):
                         crps = gev_crps(
@@ -1192,7 +1192,7 @@ class Experiment:
                         self.experiment.model_kwargs["batch_size"],
                         jax.random.key(self.experiment.model_kwargs["rng"]["shuffle"]),
                     ):
-                        gevparams = self.experiment.NN.apply(params, x_s, x_t)
+                        gevparams = self.experiment.nn.apply(params, x_s, x_t)
                         if self.experiment.model_kwargs["target"] == "GEV":
                             crps[i, j] += gev_crps_loss(
                                 gevparams,
@@ -1301,7 +1301,7 @@ class Experiment:
                             for i in range(self.experiment.clusters["n"])
                         ]
                     )
-                    outputs = self.experiment.NN.apply(params, sb, tb)
+                    outputs = self.experiment.nn.apply(params, sb, tb)
                     mus, sigmas, xis = jnp.split(outputs, 3, axis=1)
                     crps[i, j] = gev_crps(
                         jnp.repeat(
@@ -1353,8 +1353,8 @@ class Experiment:
             ) as f:
                 s, t, l = pickle.load(f)
             for i, params in enumerate(paramlist):
+                print(i)
                 for j, lt in enumerate(self.experiment.filter["lead_times"]):
-                    print(lt)
                     sb = jnp.array(s[t[:, 3] == lt / 72])
                     tb = jnp.array(t[t[:, 3] == lt / 72])
                     lb = tuple(
@@ -1371,18 +1371,25 @@ class Experiment:
                         self.experiment.model_kwargs["batch_size"],
                         jax.random.key(self.experiment.model_kwargs["rng"]["shuffle"]),
                     ):
-                        tmpparams = self.experiment.NN.apply(params, x_s, x_t)
+                        tmpparams = self.experiment.nn.apply(params, x_s, x_t)
                         gevparams = (
                             tmpparams
                             if gevparams is None
                             else jnp.concatenate([gevparams, tmpparams], axis=0)
                         )
-            param_distribution(
-                gevparams,
+            with open(
                 os.path.join(
-                    self.experiment.folders["plot"]["folder"], "Parameters.png"
+                    self.experiment.folders["plot"]["folder"], "gevparams.pkl"
                 ),
-            )
+                "wb",
+            ) as f:
+                pickle.dump(gevparams, f)
+            # param_distribution(
+            #     gevparams,
+            #     os.path.join(
+            #         self.experiment.folders["plot"]["folder"], "Parameters.png"
+            #     ),
+            # )
 
         def shap_vals(
             self,
@@ -1452,7 +1459,7 @@ class Experiment:
                 t, s = np.split(ds, [tShape[1]], axis=-1)
                 s = s.reshape(-1, sShape[1], sShape[2], sShape[3])
                 return np.array(
-                    self.experiment.NN.apply(paramlist[fold], s, t)[:, ioutputs]
+                    self.experiment.nn.apply(paramlist[fold], s, t)[:, ioutputs]
                 )
 
             explainer = shap.KernelExplainer(predict, data.mean(axis=0, keepdims=True))
@@ -1608,7 +1615,7 @@ class Experiment:
                     t, s = jnp.split(ds, [t_shape[1]], axis=-1)
                     t = t[:, 0, 0, :]
                     return np.array(
-                        self.experiment.NN.apply(paramlist[0], s, t)[
+                        self.experiment.nn.apply(paramlist[0], s, t)[
                             :, iparam * 5 + cluster
                         ]
                     )
@@ -1767,7 +1774,7 @@ class Experiment:
                     t, s = np.split(ds, [t_shape[1]], axis=-1)
                     s = s.reshape(-1, s_shape[1], s_shape[2], s_shape[3])
                     return np.array(
-                        self.experiment.NN.apply(paramlist[0], s, t)[
+                        self.experiment.nn.apply(paramlist[0], s, t)[
                             :, iparam * 5 + cluster
                         ]
                     )

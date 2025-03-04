@@ -16,7 +16,7 @@ import os
 
 from storm import Storm, Storms
 
-from utils import storm_plot, metrics_evolution, load_as_nested_dict
+from utils import storm_plot, metrics_evolution
 
 
 def double_exp(mu, sigma, y):
@@ -241,17 +241,10 @@ class RExperiment:
         Parameters
         ----------
         experiment_file : str
-            Path to the experiment file. Either a .txt file or a .pkl file.
-            If a .txt file, will try to recover crps and data values from
-            a pkl file in experiment plot folder.
+            Path to the experiment file.
         """
-        if not (experiment_file.endswith('.pkl') or experiment_file.endswith('.txt')):
-            raise ValueError(f"Unexpected file type: {experiment_file.strip('.')[-1]}")
-        if experiment_file.endswith('.pkl'):
-            with open(experiment_file, "rb") as f:
-                experiment = pickle.load(f)
-        else:
-            experiment = load_as_nested_dict(experiment_file)
+        with open(experiment_file, "rb") as f:
+            experiment = pickle.load(f)
         self.exp_number = experiment_file.split("_")[-1].split(".")[0]
         self.files = experiment["files"]
         default_files = {
@@ -269,14 +262,6 @@ class RExperiment:
                 for subk, subv in v.items():
                     if not subk in self.files[k].keys():
                         self.files[k][subk] = subv
-        if not isinstance(self.files["train"]["inputs"], list):
-            self.files["train"]["inputs"] = [self.files["train"]["inputs"]]
-        if not isinstance(self.files["test"]["inputs"], list):
-            self.files["test"]["inputs"] = [self.files["test"]["inputs"]]
-        if not isinstance(self.files["train"]["labels"], list):
-            self.files["train"]["labels"] = [self.files["train"]["labels"]]
-        if not isinstance(self.files["test"]["labels"], list):
-            self.files["test"]["labels"] = [self.files["test"]["labels"]]
         self.folders = experiment["folders"]
         default_folders = {
             "scratch": {"folder": None, "dir": None},
@@ -380,15 +365,7 @@ class RExperiment:
             )
             for i in range(self.clusters["n"])
         ]
-        os.makedirs(self.folders["scratch"]["folder"], exist_ok=True)
-        os.makedirs(self.folders["plot"]["folder"], exist_ok=True)
         self.crps = experiment.get("CRPS", {})
-        self.data = experiment.get("Data", {})
-        if os.path.exists(os.path.join(self.folders["plot"]["folder"],
-                                       'data_and_crps')):
-            with open(os.path.join(self.folders["plot"]["folder"], 'data_and_crps'),
-                      'wb') as f:
-                data_and_crps = pickle.load(f)
         default_crps = {"mean": None, "std": None, "values": None}
         for k, v in default_crps.items():
             if not k in self.crps.keys():
@@ -398,10 +375,13 @@ class RExperiment:
         for k, v in default_loglik.items():
             if not k in self.loglik.keys():
                 self.loglik[k] = v
+        self.data = experiment.get("Data", {})
         default_data = {"mean": None, "std": None}
         for k, v in default_data.items():
             if not k in self.data.keys():
                 self.data[k] = v
+        os.makedirs(self.folders["scratch"]["folder"], exist_ok=True)
+        os.makedirs(self.folders["plot"]["folder"], exist_ok=True)
         if self.folders["plot"]["model"] is None:
             self.folders["plot"]["model"] = os.path.join(
                 self.folders["plot"]["folder"], "models"

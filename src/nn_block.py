@@ -382,7 +382,7 @@ class DiscreteNN(nn.Module):
 class AlpThNN(nn.Module):
     n_clusters: int = 5
     spatial_nn: Callable = ConvNeXtNN(width=20, height=34)
-    temporal_nn: Callable = nn.Dense(features=64)
+    temporal_nn: Callable = DenseNN(features=64)
     dd_nn: Callable = GevDDNN(n_clusters=10)
 
     @nn.compact

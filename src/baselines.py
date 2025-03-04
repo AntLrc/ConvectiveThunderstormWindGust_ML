@@ -143,15 +143,15 @@ def crps_arr_climatology(obs, climatology, n_fold):
     """
     crps = np.zeros((len(obs), obs[0].shape[0]))
     for i_cluster in range(len(obs)):
-        print("Cluster: ", i_cluster)
         crps[i_cluster] = compute_ecdf_crps_climatology(obs[i_cluster], climatology[i_cluster])
     return np.repeat(np.expand_dims(crps, axis=0), n_fold, axis=0)
 
 
 def pointwise_baseline(obs_da, fcst_da, t_array, year, clusters):
-    ### To be looked at again
     """
-    Baseline that predicts the last observed value. It means that it will have
+    Outputs arrays suitable for cdf crps. Pointwise baseline converts a xr.DataArray
+    to a list of arrays for each cluster.
+    Can be used to predict the last observed value. It means that it will have
     best performance for lead time 0h, and the performance will decrease as the
     lead time increases. obs_da and fcst_da are xr.DataArray, tarray is the output
     time array from Experiment or RExperiment. clusters is a list of list of stations.
@@ -306,10 +306,3 @@ def icon_crps(icon_ds, obs_da, t_array, year, clusters, lead_times):
     crps = np.transpose(crps, (2, 0, 1))
     # crps is of shape (n_realisations, n_clusters, n_lead_times)
     return crps
-
-    # xr.DataArray(crps,
-    #              coords = {'realisation': np.arange(crps.shape[0]),
-    #                         'cluster': np.arange(crps.shape[1]),
-    #                         'lead_time': lead_times_6h},
-    #               dims = ['realisation', 'cluster', 'lead_time'],
-    #               name = 'crps')
