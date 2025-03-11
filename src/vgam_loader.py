@@ -16,7 +16,7 @@ import os
 
 from storm import Storm, Storms
 
-from utils import storm_plot, metrics_evolution, load_as_nested_dict
+from utils import storm_plot, metrics_evolution, load_as_nested_dict, save_nested_dict
 
 
 def double_exp(mu, sigma, y):
@@ -290,6 +290,8 @@ class RExperiment:
                     if not subk in self.folders[k].keys():
                         self.folders[k][subk] = subv
         self.features = experiment["features"]
+        if not(isinstance(self.features, list)):
+            self.features = [self.features]
         self.label = experiment["label"]
         self.vgam_kwargs = experiment.get("vgam_kwargs", {})
         default_vgam_kwargs = {"model": "vglm", "spline_df": 3}
@@ -384,16 +386,24 @@ class RExperiment:
         os.makedirs(self.folders["plot"]["folder"], exist_ok=True)
         self.crps = experiment.get("CRPS", {})
         self.data = experiment.get("Data", {})
+        self.loglik = experiment.get("LogLik", {})
         if os.path.exists(os.path.join(self.folders["plot"]["folder"],
-                                       'data_and_crps')):
-            with open(os.path.join(self.folders["plot"]["folder"], 'data_and_crps'),
-                      'wb') as f:
-                data_and_crps = pickle.load(f)
+                                        'data_crps_and_loglik.pkl')):
+            with open(os.path.join(self.folders["plot"]["folder"],
+                                   'data_crps_and_loglik.pkl'), 'rb') as f:
+                data_crps_and_loglik = pickle.load(f)
+        else:
+            data_crps_and_loglik = {'crps': {}, 'data': {}, 'loglik': {}}
+        if self.crps == {}:
+            self.crps = data_crps_and_loglik['crps']
+        if self.data == {}:
+            self.data = data_crps_and_loglik['data']
+        if self.loglik == {}:
+            self.loglik = data_crps_and_loglik['loglik']
         default_crps = {"mean": None, "std": None, "values": None}
         for k, v in default_crps.items():
             if not k in self.crps.keys():
                 self.crps[k] = v
-        self.loglik = experiment.get("LogLik", {})
         default_loglik = {"mean": None, "std": None, "values": None}
         for k, v in default_loglik.items():
             if not k in self.loglik.keys():
@@ -402,6 +412,11 @@ class RExperiment:
         for k, v in default_data.items():
             if not k in self.data.keys():
                 self.data[k] = v
+        if os.path.exists(os.path.join(self.folders["plot"]["folder"],
+                                       'data_and_crps')):
+            with open(os.path.join(self.folders["plot"]["folder"], 'data_crps_and_loglik.pkl'),
+                      'rb') as f:
+                data_crps_and_loglik = pickle.load(f)
         if self.folders["plot"]["model"] is None:
             self.folders["plot"]["model"] = os.path.join(
                 self.folders["plot"]["folder"], "models"
@@ -481,7 +496,7 @@ class RExperiment:
             inputs.close()
         self.data["mean"] = mean_ / count
         self.data["std"] = np.sqrt(mean_sq / count - self.data["mean"] ** 2)
-        self.save.experiment_file()
+        self.save.experimentfile()
         print("Done.", flush=True)
 
     def create_inputs(self):
@@ -1015,7 +1030,7 @@ class RExperiment:
         self.loglik["values"] = loglik
         self.save.information()
         self.save.summary()
-        self.save.experiment_file()
+        self.save.experimentfile()
 
     def run_single(self, arg):
         """
@@ -1946,7 +1961,7 @@ class RExperiment:
         def summary(self):
             pass
 
-        def experiment_file(self):
+        def experimentfile(self):
             """
             Save the experiment in a file.
             """
@@ -1960,9 +1975,21 @@ class RExperiment:
                 "filter": {
                     k: self.experiment.filter[k] for k in ["lead_times", "storm_part"]
                 },
-                "CRPS": self.experiment.CRPS,
-                "LogLik": self.experiment.LogLik,
-                "Data": self.experiment.Data,
+                "crps": self.experiment.crps,
+                "loglik": self.experiment.loglik,
+                "data": self.experiment.data,
             }
-            with open(self.experiment.files["experiment"], "wb") as f:
-                pickle.dump(experiment_dict, f)
+            filetype = self.experiment.files["experiment"].split('.')[-1]
+            if filetype == "pkl":
+                with open(self.experiment.files["experiment"], "wb") as f:
+                    pickle.dump(experiment_dict, f)
+            elif filetype == 'txt':
+                data_crps_and_loglik = {k:experiment_dict[k] for k in ['data', 'crps', 'loglik']}
+                with open(os.path.join(self.experiment.folders['plot']['folder'],
+                                       'data_crps_and_loglik.pkl'),
+                          'wb') as f:
+                    pickle.dump(data_crps_and_loglik, f)
+                experiment_dict.pop('data')
+                experiment_dict.pop('crps')
+                save_nested_dict(self.experiment.files["experiment"], experiment_dict)
+                

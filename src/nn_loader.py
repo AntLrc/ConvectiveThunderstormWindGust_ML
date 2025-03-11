@@ -79,6 +79,8 @@ class Experiment:
                     if not subk in self.folders[k].keys():
                         self.folders[k][subk] = subv
         self.features = experiment["features"]
+        if not(isinstance(self.features, list)):
+            self.features = [self.features]
         self.label = experiment["label"]
         self.nn_kwargs = experiment.get("nn_kwargs", {})
         self.model_kwargs = experiment.get("model_kwargs", {})
@@ -174,13 +176,19 @@ class Experiment:
         ]
         os.makedirs(self.folders["scratch"]["folder"], exist_ok=True)
         os.makedirs(self.folders["plot"]["folder"], exist_ok=True)
-        self.crps = experiment.get("CRPS", {})
-        self.data = experiment.get("Data", {})
+        self.crps = experiment.get("crps", {})
+        self.data = experiment.get("data", {})
         if os.path.exists(os.path.join(self.folders["plot"]["folder"],
                                        'data_and_crps')):
             with open(os.path.join(self.folders["plot"]["folder"], 'data_and_crps'),
-                      'wb') as f:
+                      'rb') as f:
                 data_and_crps = pickle.load(f)
+        else:
+            data_and_crps = {"data": {}, "crps": {}}
+        if self.crps == {}:
+            self.crps = data_and_crps["crps"]
+        if self.data == {}:
+            self.data = data_and_crps["data"]
         default_crps = {"mean": None, "std": None, "values": None}
         for k, v in default_crps.items():
             if not k in self.crps.keys():

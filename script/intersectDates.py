@@ -14,10 +14,10 @@ def main():
     parser.add_argument('--year', type=str, help='Year to intersect')
     
     args = parser.parse_args()
-    NNinputdir = args.dir
+    nn_input_dir = args.dir
     year = args.year
     
-    pp.intersect_dates(NNinputdir, year)
+    pp.intersect_dates(nn_input_dir, year)
 
 if __name__ == "__main__":
     main()
